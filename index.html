@@ -424,8 +424,14 @@ function calcStatus(nota) {
   if (nota.baseStatus === 'perdido') return 'perdido';
   if (nota.baseStatus === 'aguardar') return 'aguardar';
   // Reprogramado: dentro do prazo → 'reprogramado' (fora da inadimplência)
-  // Reprogramado expirado → 'aguardando_cartorio' e não pode mais reprogramar
+  // Parcela vencida sem pagamento → 'juridico' imediatamente (acordo descumprido)
+  // Reprogramado expirado → cai na máquina normal (aguardando_cartorio)
   if (nota.reprogramado && nota.dataReprogramacao) {
+    // Se qualquer parcela do reparcelamento venceu sem ser paga → Jurídico imediato
+    if (nota.parcelas?.length) {
+      const parcelaVencida = nota.parcelas.some(p => !p.pago && diasAtraso(p.vencimento) > 0);
+      if (parcelaVencida) return 'juridico';
+    }
     const hoje = new Date(); hoje.setHours(0,0,0,0);
     const dr = new Date(nota.dataReprogramacao + 'T00:00:00'); dr.setHours(0,0,0,0);
     if (hoje <= dr) return 'reprogramado';
