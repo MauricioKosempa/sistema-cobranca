@@ -2114,7 +2114,14 @@ function filterVencidos() {
       <td class="text-right">${fmt(n.valor)}</td>
       <td>
         ${statusBadge(s)}
-        ${n.reprogramado?`<div style="margin-top:3px"><span style="font-size:10px;background:#d1fae5;color:#065f46;border:1px solid #6ee7b7;padding:1px 7px;border-radius:10px;font-weight:700">${diasAtraso(n.dataReprogramacao||'')>0?'⚠️ Reprog. vencida':'📅 Reprog. '+fmtDate(n.dataReprogramacao)}</span></div>`:''}
+        ${n.reprogramado?`<div style="margin-top:3px">
+          <span style="font-size:10px;background:#d1fae5;color:#065f46;border:1px solid #6ee7b7;padding:1px 7px;border-radius:10px;font-weight:700">
+            ${diasAtraso(n.dataReprogramacao||'')>0?'⚠️ Reprog. vencida':
+              n.parcelas?.length
+                ? `📦 ${n.parcelas.filter(p=>p.pago).length}/${n.parcelas.length} pagas · próx ${fmtDate(n.parcelas.find(p=>!p.pago)?.vencimento||n.dataReprogramacao)}`
+                : '📅 Reprog. '+fmtDate(n.dataReprogramacao)}
+          </span>
+        </div>`:''}
         ${n.emTrativaCom ? `<div style="margin-top:4px" id="trat-badge-${n.id}">${badgeTratativa(n.emTrativaCom)}</div>` : `<span id="trat-badge-${n.id}"></span>`}
       </td>
       <td title="${tooltipCrm}" style="min-width:220px;white-space:normal">
@@ -2198,6 +2205,10 @@ function buildActionBtns(n, s) {
     } else if (!n.reprogramado && s !== 'reprogramado') {
       r.push(`<button class="flag-btn" style="background:#d1fae5;color:#065f46" onclick="abrirReprogramacao('${n.id}')">📅 Reprog.</button>`);
     }
+    if (n.parcelas?.length) {
+      const pagas = n.parcelas.filter(p=>p.pago).length;
+      r.push(`<button class="flag-btn" style="background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe" onclick="verParcelas('${n.id}')">📦 ${pagas}/${n.parcelas.length} parcelas</button>`);
+    }
   }
   if (s==='aguardando_cartorio') r.push(`<button class="flag-btn" style="background:#fce7f3;color:#9d174d" onclick="flagCartorio('${id}')">⚖️ Enviar Cartório</button>`);
   if (s==='protestado') r.push(`<button class="flag-btn" style="background:#fdf4ff;color:#7e22ce" onclick="flagEmpCob('${id}')">🏢 Emp. Cobrança</button>`);
@@ -2217,29 +2228,61 @@ function abrirReprogramacao(id) {
     alert('⚠️ Este título já foi reprogramado e a data venceu.\nEnvie ao Cartório — nova reprogramação não é permitida.');
     return;
   }
+  window._reprogId = id;
   openModal(`
     <h2>📅 Reprogramar Pagamento</h2>
     <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:14px;margin-bottom:16px">
       <div style="font-size:13px;font-weight:600;color:#065f46;margin-bottom:6px">ℹ️ O que acontece ao reprogramar:</div>
       <ul style="font-size:12px;color:#065f46;margin:0;padding-left:18px;line-height:1.8">
-        <li>O título <b>sai da inadimplência</b> até a nova data</li>
+        <li>O título <b>sai da inadimplência</b> até a nova data (ou última parcela)</li>
         <li>Status muda automaticamente para <b>🔄 Reprogramado</b></li>
         <li>Ao vencer novamente, o status vira <b>Aguardando Cartório</b> automaticamente</li>
         <li>⚠️ <b>Reprogramação permitida apenas uma vez</b> — se vencer novamente, vai ao Cartório</li>
       </ul>
     </div>
-    <div style="background:#fff;border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:16px;font-size:13px">
+    <div style="background:#fff;border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:14px;font-size:13px">
       <b>${n.cliente}</b> · NF ${n.nf} · ${fmt(n.valor)}<br>
       <span style="color:var(--danger)">Vencimento original: ${fmtDate(n.vencimento)} (${diasAtraso(n.vencimento)} dias em atraso)</span>
     </div>
-    <div class="form-group">
-      <label>Nova data de pagamento comprometida pelo cliente *</label>
-      <input type="date" id="reprog-data" min="${today()}">
-      <span style="font-size:11px;color:var(--text-muted);margin-top:3px;display:block">Deve ser uma data futura</span>
+
+    <!-- Toggle reparcelamento -->
+    <div style="background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px">
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px;font-weight:600;margin:0">
+        <input type="checkbox" id="reprog-parcelas-chk" onchange="toggleReprogParcelas()"
+          style="width:16px;height:16px;accent-color:#065f46;cursor:pointer">
+        Cliente solicitou reparcelamento (múltiplas parcelas)
+      </label>
     </div>
+
+    <!-- Pagamento único -->
+    <div id="reprog-unico">
+      <div class="form-group">
+        <label>Nova data de pagamento comprometida pelo cliente *</label>
+        <input type="date" id="reprog-data" min="${today()}">
+        <span style="font-size:11px;color:var(--text-muted);margin-top:3px;display:block">Deve ser uma data futura</span>
+      </div>
+    </div>
+
+    <!-- Reparcelamento -->
+    <div id="reprog-parcelas-bloco" style="display:none">
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:12px">
+        <div class="form-group" style="margin:0;flex:0 0 170px">
+          <label>Número de parcelas *</label>
+          <input type="number" id="reprog-nparcelas" min="2" max="24" value="2"
+            oninput="gerarCamposParcelas()"
+            style="text-align:center;font-size:18px;font-weight:700;border:2px solid #86efac">
+        </div>
+        <div style="font-size:12px;color:var(--text-muted);padding-top:18px;line-height:1.6">
+          Valor total: <b style="color:#065f46">${fmt(n.valor)}</b><br>
+          Distribuído automaticamente — ajuste se necessário
+        </div>
+      </div>
+      <div id="reprog-parcelas-campos"></div>
+    </div>
+
     <div class="form-group">
       <label>Observação (opcional)</label>
-      <input type="text" id="reprog-obs" placeholder="Ex: Cliente confirmou pagamento até esta data por e-mail">
+      <input type="text" id="reprog-obs" placeholder="Ex: Cliente confirmou reparcelamento por e-mail">
     </div>
     <div class="form-actions">
       <button class="btn btn-primary" onclick="salvarReprogramacao('${id}')">📅 Confirmar Reprogramação</button>
@@ -2248,24 +2291,159 @@ function abrirReprogramacao(id) {
   `);
 }
 
+function toggleReprogParcelas() {
+  const chk = document.getElementById('reprog-parcelas-chk').checked;
+  document.getElementById('reprog-unico').style.display = chk ? 'none' : '';
+  document.getElementById('reprog-parcelas-bloco').style.display = chk ? '' : 'none';
+  if (chk) gerarCamposParcelas();
+}
+
+function gerarCamposParcelas() {
+  const n = DB.notas.find(x=>x.id===window._reprogId);
+  const valorTotal = n ? Number(n.valor||0) : 0;
+  const qtd = Math.max(2, Math.min(24, parseInt(document.getElementById('reprog-nparcelas')?.value||2)||2));
+  const valorParc = valorTotal > 0 ? Math.round((valorTotal / qtd) * 100) / 100 : 0;
+  const hoje = new Date(); hoje.setHours(0,0,0,0);
+
+  let html = `<div style="border:1px solid #86efac;border-radius:8px;overflow:hidden;margin-bottom:12px">
+    <div style="background:#065f46;color:#fff;font-size:11px;font-weight:700;padding:7px 12px;
+      display:grid;grid-template-columns:52px 1fr 1fr;gap:8px;letter-spacing:.5px">
+      <span>#</span><span>Vencimento</span><span>Valor (R$)</span>
+    </div>`;
+  for (let i = 1; i <= qtd; i++) {
+    const dt = new Date(hoje);
+    dt.setDate(dt.getDate() + 30 * i);
+    const dtStr = dt.toISOString().slice(0,10);
+    const bg = i % 2 === 0 ? '#f0fdf4' : '#fff';
+    html += `<div style="display:grid;grid-template-columns:52px 1fr 1fr;gap:8px;
+        padding:8px 12px;border-top:1px solid #d1fae5;align-items:center;background:${bg}">
+      <span style="font-size:13px;font-weight:700;color:#065f46">${i}ª</span>
+      <input type="date" id="parc-data-${i}" value="${dtStr}" min="${today()}"
+        style="border:1px solid #86efac;border-radius:6px;padding:5px 8px;font-size:12px;width:100%">
+      <input type="number" id="parc-val-${i}" value="${valorParc}" step="0.01" min="0"
+        style="border:1px solid #86efac;border-radius:6px;padding:5px 8px;font-size:12px;text-align:right;width:100%">
+    </div>`;
+  }
+  html += `</div>`;
+  document.getElementById('reprog-parcelas-campos').innerHTML = html;
+}
+
 function salvarReprogramacao(id) {
   const n = DB.notas.find(x=>x.id===id); if(!n) return;
-  const data = document.getElementById('reprog-data')?.value;
-  const obs  = document.getElementById('reprog-obs')?.value?.trim()||'';
-  if (!data) { alert('Informe a nova data de pagamento.'); return; }
-  if (diasAtraso(data) > 0) { alert('A data deve ser futura.'); return; }
-  n.reprogramado = true;
-  n.dataReprogramacao = data;
-  addHist(n, 'Reprogramação', `Pagamento reprogramado para ${fmtDate(data)}${obs?' — '+obs:''}`);
+  const obs = document.getElementById('reprog-obs')?.value?.trim()||'';
+  const usaParcelas = document.getElementById('reprog-parcelas-chk')?.checked;
+
+  if (usaParcelas) {
+    const qtd = Math.max(2, Math.min(24, parseInt(document.getElementById('reprog-nparcelas')?.value||2)||2));
+    const parcelas = [];
+    for (let i = 1; i <= qtd; i++) {
+      const data  = document.getElementById(`parc-data-${i}`)?.value;
+      const valor = parseFloat(document.getElementById(`parc-val-${i}`)?.value||'0');
+      if (!data)  { alert(`Informe a data da ${i}ª parcela.`); return; }
+      if (diasAtraso(data) > 0) { alert(`A data da ${i}ª parcela deve ser futura.`); return; }
+      if (i > 1 && data < parcelas[i-2].vencimento) {
+        alert(`A data da ${i}ª parcela deve ser posterior à ${i-1}ª.`); return;
+      }
+      parcelas.push({ vencimento: data, valor, pago: false });
+    }
+    n.reprogramado = true;
+    n.dataReprogramacao = parcelas[parcelas.length-1].vencimento;
+    n.parcelas = parcelas;
+    addHist(n, 'Reparcelamento', `Dividido em ${qtd}x — última em ${fmtDate(n.dataReprogramacao)}${obs?' — '+obs:''}`);
+    saveDB(); closeModal();
+    if (currentPage==='vencidos') filterVencidos(); else renderDashboard();
+    const toast = document.createElement('div');
+    toast.style.cssText='position:fixed;bottom:24px;right:24px;background:#065f46;color:#fff;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:600;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.2)';
+    toast.textContent=`✅ Reparcelado em ${qtd}x! Última parcela em ${fmtDate(n.dataReprogramacao)}`;
+    document.body.appendChild(toast); setTimeout(()=>toast.remove(),4000);
+  } else {
+    const data = document.getElementById('reprog-data')?.value;
+    if (!data) { alert('Informe a nova data de pagamento.'); return; }
+    if (diasAtraso(data) > 0) { alert('A data deve ser futura.'); return; }
+    n.reprogramado = true;
+    n.dataReprogramacao = data;
+    delete n.parcelas;
+    addHist(n, 'Reprogramação', `Pagamento reprogramado para ${fmtDate(data)}${obs?' — '+obs:''}`);
+    saveDB(); closeModal();
+    if (currentPage==='vencidos') filterVencidos(); else renderDashboard();
+    const toast = document.createElement('div');
+    toast.style.cssText='position:fixed;bottom:24px;right:24px;background:#065f46;color:#fff;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:600;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.2)';
+    toast.textContent='✅ Reprogramado! Título saiu da inadimplência até '+fmtDate(data);
+    document.body.appendChild(toast); setTimeout(()=>toast.remove(),4000);
+  }
+}
+
+function verParcelas(id) {
+  const n = DB.notas.find(x=>x.id===id); if(!n||!n.parcelas?.length) return;
+  const pagas = n.parcelas.filter(p=>p.pago).length;
+  const total = n.parcelas.length;
+  const valorPago   = n.parcelas.filter(p=>p.pago).reduce((s,p)=>s+Number(p.valor||0),0);
+  const valorAberto = n.parcelas.filter(p=>!p.pago).reduce((s,p)=>s+Number(p.valor||0),0);
+  const proxima = n.parcelas.find(p=>!p.pago);
+
+  openModal(`
+    <h2>📦 Parcelas do Reparcelamento</h2>
+    <div style="background:#fff;border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:16px;font-size:13px">
+      <b>${n.cliente}</b> · NF ${n.nf} · Valor original: ${fmt(n.valor)}<br>
+      <span style="color:var(--text-muted)">Reprogramação: ${pagas}/${total} parcelas pagas</span>
+      ${proxima?`<span style="margin-left:12px;color:#b45309;font-weight:600">· Próxima: ${fmtDate(proxima.vencimento)} — ${fmt(proxima.valor)}</span>`:''}
+    </div>
+    <div style="display:flex;gap:12px;margin-bottom:16px">
+      <div style="flex:1;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:10px;text-align:center">
+        <div style="font-size:11px;color:#065f46;font-weight:600;margin-bottom:2px">PAGO</div>
+        <div style="font-size:15px;font-weight:700;color:#065f46">${fmt(valorPago)}</div>
+      </div>
+      <div style="flex:1;background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:10px;text-align:center">
+        <div style="font-size:11px;color:#b91c1c;font-weight:600;margin-bottom:2px">EM ABERTO</div>
+        <div style="font-size:15px;font-weight:700;color:#b91c1c">${fmt(valorAberto)}</div>
+      </div>
+    </div>
+    <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:16px">
+      <div style="background:#f8fafc;font-size:11px;font-weight:700;padding:7px 12px;
+        display:grid;grid-template-columns:52px 1fr 1fr 90px;gap:8px;color:var(--text-muted);letter-spacing:.5px;text-transform:uppercase">
+        <span>#</span><span>Vencimento</span><span>Valor</span><span>Situação</span>
+      </div>
+      ${n.parcelas.map((p,i)=>{
+        const vencida = !p.pago && diasAtraso(p.vencimento) > 0;
+        const bg = p.pago ? '#f0fdf4' : (vencida?'#fef2f2':'#fff');
+        const statusLabel = p.pago
+          ? `<span style="background:#dcfce7;color:#15803d;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">✓ Pago</span>`
+          : vencida
+            ? `<span style="background:#fef2f2;color:#b91c1c;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">Vencida</span>`
+            : `<span style="background:#e0f2fe;color:#075985;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">Aberta</span>`;
+        return `<div style="display:grid;grid-template-columns:52px 1fr 1fr 90px;gap:8px;
+            padding:9px 12px;border-top:1px solid var(--border);align-items:center;background:${bg}">
+          <span style="font-size:13px;font-weight:700;color:#475569">${i+1}ª</span>
+          <span style="font-size:13px">${fmtDate(p.vencimento)}</span>
+          <span style="font-size:13px;font-weight:600">${fmt(p.valor)}</span>
+          <div style="display:flex;align-items:center;gap:6px">
+            ${statusLabel}
+            ${!p.pago?`<button onclick="marcarParcelaPaga('${id}',${i})" title="Marcar como paga"
+              style="background:none;border:none;cursor:pointer;font-size:14px;padding:2px">✓</button>`:''}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">Fechar</button>
+    </div>
+  `);
+}
+
+function marcarParcelaPaga(id, idx) {
+  const n = DB.notas.find(x=>x.id===id); if(!n||!n.parcelas) return;
+  n.parcelas[idx].pago = true;
+  const todasPagas = n.parcelas.every(p=>p.pago);
+  if (todasPagas) {
+    n.baseStatus = 'pago';
+    addHist(n, 'Pagamento', 'Todas as parcelas quitadas — título marcado como Pago');
+  } else {
+    const prox = n.parcelas.find(p=>!p.pago);
+    addHist(n, 'Parcela paga', `${idx+1}ª parcela quitada (${fmt(n.parcelas[idx].valor)}). Próxima: ${fmtDate(prox?.vencimento||'')}`);
+  }
   saveDB();
-  closeModal();
+  verParcelas(id);
   if (currentPage==='vencidos') filterVencidos(); else renderDashboard();
-  // Feedback
-  const toast = document.createElement('div');
-  toast.style.cssText='position:fixed;bottom:24px;right:24px;background:#065f46;color:#fff;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:600;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.2)';
-  toast.textContent='✅ Reprogramado! Título saiu da inadimplência até '+fmtDate(data);
-  document.body.appendChild(toast);
-  setTimeout(()=>toast.remove(),4000);
 }
 
 /* ============================================================
