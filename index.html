@@ -5171,9 +5171,12 @@ function renderConfiguracoes(){
               <td style="padding:8px 10px">${new Date(imp.data).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})}</td>
               <td style="padding:8px 10px"><b>${imp.arquivo}</b></td>
               <td style="padding:8px 10px;text-align:center">${rest}</td>
-              <td style="padding:8px 10px;text-align:right">${rest>0
-                ?`<button class="btn btn-danger btn-sm" onclick="excluirImportacao('${imp.id}','${imp.arquivo.replace(/'/g,"\\'")}',${rest})">🗑️ Excluir ${rest}</button>`
-                :`<span style="font-size:12px;color:var(--text-muted)">Excluídos</span>`}</td>
+              <td style="padding:8px 10px;text-align:right;display:flex;gap:6px;justify-content:flex-end;align-items:center">
+                <button class="btn btn-ghost btn-sm" onclick="baixarPlanilhaImportacao('${imp.id}','${imp.arquivo.replace(/'/g,"\\'")}')" title="Baixar planilha desta importação">📥 Baixar</button>
+                ${rest>0
+                  ?`<button class="btn btn-danger btn-sm" onclick="excluirImportacao('${imp.id}','${imp.arquivo.replace(/'/g,"\\'")}',${rest})">🗑️ Excluir ${rest}</button>`
+                  :`<span style="font-size:12px;color:var(--text-muted)">Excluídos</span>`}
+              </td>
             </tr>`;
           }).join('')}</tbody></table>`;
         })()}
@@ -5314,6 +5317,39 @@ function excluirImportacao(batchId,arquivo,qtd){
   if(!confirm(`⚠️ Excluir permanentemente ${qtd} lançamento(s) do arquivo "${arquivo}"?`))return;
   DB.notas=DB.notas.filter(n=>n.batchId!==batchId);saveDB();
   alert(`✅ ${qtd} lançamento(s) excluído(s).`);renderConfiguracoes();
+}
+
+function baixarPlanilhaImportacao(batchId, arquivo) {
+  const notas = DB.notas.filter(n => n.batchId === batchId);
+  if (!notas.length) { alert('Nenhuma nota encontrada para esta importação.'); return; }
+
+  const headers = ['Nº NF','Cliente','Vencimento','Valor da Nota','Empresa','Status','Em Tratativa','Vendedor'];
+  const rows = notas.map(n => [
+    n.nf || '',
+    n.cliente || '',
+    n.vencimento || '',
+    Number(n.valor || 0),
+    n.empresa || '',
+    STATUS_LABELS[calcStatus(n)] || 'Automático',
+    n.emTrativaCom || '',
+    n.vendedor || ''
+  ]);
+
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+  ws['!cols'] = [{wch:12},{wch:28},{wch:14},{wch:16},{wch:22},{wch:22},{wch:22},{wch:22}];
+
+  // Formatar coluna de valor como número
+  rows.forEach((_,i) => {
+    const cell = ws[XLSX.utils.encode_cell({r: i+1, c: 3})];
+    if (cell) { cell.t = 'n'; cell.z = '#,##0.00'; }
+  });
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Recebimentos');
+
+  // Nome do arquivo: mantém o original, troca extensão para .xlsx se necessário
+  const nomeBase = arquivo.replace(/\.(xls|xlsx|csv)$/i, '');
+  XLSX.writeFile(wb, `${nomeBase}.xlsx`);
 }
 
 function backupDB(){
