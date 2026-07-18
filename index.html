@@ -955,6 +955,7 @@ function gerarHTMLVendedor(vendNome, notas) {
 
 async function enviarRelatorioVendedor(vendNome) {
   const vend = DB.vendedores.find(v=>v.nome===vendNome);
+  if (vend?.situacao === 'Inativo') return true; // silenciosamente ignora inativo
   if (!vend?.email) { alert(`Vendedor "${vendNome}" sem e-mail cadastrado.`); return false; }
   const notas = DB.notas.filter(n => {
     if(n.vendedor!==vendNome) return false;
@@ -988,9 +989,10 @@ async function enviarEmailTodosVendedores() {
     alert('⚠️ Envio de e-mail está desativado.\nAcesse Parâmetros → Controles de Envio para habilitar.');
     return;
   }
+  const inativosSet = new Set((DB.vendedores||[]).filter(v=>v.situacao==='Inativo').map(v=>v.nome));
   const vendedoresComNotas = [...new Set(DB.notas
     .filter(n=>!['pago','perdido','a_vencer'].includes(calcStatus(n)))
-    .map(n=>n.vendedor).filter(Boolean))];
+    .map(n=>n.vendedor).filter(v=>v && !inativosSet.has(v)))];
   if(!vendedoresComNotas.length){ alert('Nenhuma nota em atraso no momento.'); return; }
 
   const token = await getToken();
@@ -1011,9 +1013,10 @@ async function enviarWATodosVendedores() {
     alert('⚠️ Envio de WhatsApp está desativado.\nAcesse Parâmetros → Controles de Envio para habilitar.');
     return;
   }
+  const inativosSetWA = new Set((DB.vendedores||[]).filter(v=>v.situacao==='Inativo').map(v=>v.nome));
   const vendedoresComNotas = [...new Set(DB.notas
     .filter(n=>!['pago','perdido','a_vencer'].includes(calcStatus(n)))
-    .map(n=>n.vendedor).filter(Boolean))];
+    .map(n=>n.vendedor).filter(v=>v && !inativosSetWA.has(v)))];
   if(!vendedoresComNotas.length){ alert('Nenhuma nota em atraso no momento.'); return; }
 
   const temEvo = DB.config.evoUrl && DB.config.evoInstance && DB.config.evoToken;
