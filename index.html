@@ -3987,9 +3987,8 @@ function analisarImport(){
 
   // BLOCO: Status inválidos — operador deve corrigir antes de importar
   if(statusInvalidos.length > 0) {
-    const statusOpcoesHtml = [
-      'Automático','Enviado p/ Cartório','Emp. Cobrança','Jurídico','Pago','Aguardar','Perdido'
-    ].map(s=>`<option value="${s}">${s}</option>`).join('');
+    const statusOpcoesHtml = ['Automático', ...Object.values(STATUS_LABELS)]
+      .map(s=>`<option value="${s}">${s}</option>`).join('');
 
     html+=`<div class="card" style="border-color:#f97316;background:#fff7ed" id="bloco-status-inv">
       <div class="card-title" style="color:#c2410c">⚠️ ${statusInvalidos.length} linha(s) com Status inválido — corrija antes de importar</div>
