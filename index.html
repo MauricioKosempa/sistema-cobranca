@@ -1648,9 +1648,7 @@ function renderDashboard() {
       </div>`);
     }
   }
-  if (flagCart>0) alertas.push(`<div class="alert alert-warning">⚖️ <b>${flagCart}</b> nota(s) aguardando envio ao Cartório — <a href="#" onclick="navigate('vencidos');return false">Ver lista</a></div>`);
   if (flagEmp>0) alertas.push(`<div class="alert alert-danger">🏢 <b>${flagEmp}</b> nota(s) prontas para Jurídico (15 dias em Emp. Cobrança) — <a href="#" onclick="navigate('vencidos');return false">Ver lista</a></div>`);
-  if (flagJur>0) alertas.push(`<div class="alert alert-info">⚖️ <b>${flagJur}</b> nota(s) em processo jurídico</div>`);
 
   // ---- Mapa de Tratativas ----
   const notasVencidasAtivas = notas.filter(n => {
@@ -2713,8 +2711,10 @@ function abrirMapaTratativas(areaKey) {
 }
 
 function gerarRelatorioIndicadores() {
-  const notas = DB.notas;
-  const empresa = DB.config.empresaNome || 'Reconlog';
+  const todasNotas = DB.notas;
+  const notas = _empresaFiltro ? todasNotas.filter(n => n.empresa === _empresaFiltro) : todasNotas;
+  const empresa = _empresaFiltro ? _empresaFiltro : (DB.config.empresaNome || 'Reconlog');
+  const escopoLabel = _empresaFiltro ? `Empresa: ${_empresaFiltro}` : 'Consolidado — Todas as Empresas';
   const data = new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'});
 
   const ativos = notas.filter(n => !['pago','perdido','reprogramado'].includes(calcStatus(n)) && diasAtraso(n.vencimento) > 0);
@@ -2791,7 +2791,7 @@ function gerarRelatorioIndicadores() {
     <button onclick="window.print()" style="padding:8px 20px;background:#1e3a8a;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">🖨️ Imprimir / Salvar PDF</button>
   </div>
   <h1>📊 Relatório de Indicadores de Cobrança</h1>
-  <div class="sub">${empresa} &nbsp;·&nbsp; ${data}</div>
+  <div class="sub">${escopoLabel} &nbsp;·&nbsp; ${data}</div>
 
   <!-- LINHA 1: Total Vencido + Total Pago -->
   <h2>Posição da Carteira</h2>
@@ -2857,7 +2857,7 @@ function gerarRelatorioIndicadores() {
   <tbody>${empRows||'<tr><td colspan="4" style="padding:12px;text-align:center;color:#6b7280">Sem dados.</td></tr>'}</tbody></table>
 
   <div style="margin-top:28px;padding-top:14px;border-top:1px solid #e2e8f0;font-size:11px;color:#94a3b8;text-align:center">
-    Gerado em ${new Date().toLocaleString('pt-BR')} · Sistema de Cobrança ${empresa}
+    Gerado em ${new Date().toLocaleString('pt-BR')} · Sistema de Cobrança · ${escopoLabel}
   </div>
 </div>
 <script>
