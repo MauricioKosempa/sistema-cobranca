@@ -1659,15 +1659,15 @@ function renderDashboard() {
       const qtd   = grupo.length;
       const area  = key === '__sem__' ? { key:'Sem definição', color:'#9ca3af', bg:'#f3f4f6', text:'#374151', icon:'❓' } : getTratativaArea(key);
       return `
-        <div onclick="abrirMapaTratativas('${key}')" style="cursor:pointer;border:1.5px solid ${area.color}40;border-radius:12px;padding:18px 20px;background:${area.bg};transition:box-shadow .15s" onmouseover="this.style.boxShadow='0 4px 16px ${area.color}30'" onmouseout="this.style.boxShadow='none'">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
-            <span style="font-size:20px">${area.icon}</span>
-            <span style="font-size:13px;font-weight:700;color:${area.text}">${area.key}</span>
+        <div onclick="abrirMapaTratativas('${key}')" style="cursor:pointer;border:2px solid ${area.color}50;border-radius:16px;padding:24px 26px;background:${area.bg};transition:box-shadow .15s;min-height:130px;display:flex;flex-direction:column;justify-content:space-between" onmouseover="this.style.boxShadow='0 6px 20px ${area.color}35'" onmouseout="this.style.boxShadow='none'">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+            <span style="font-size:22px">${area.icon}</span>
+            <span style="font-size:14px;font-weight:700;color:${area.text}">${area.key}</span>
           </div>
-          <div style="font-size:22px;font-weight:800;color:${area.color};margin-bottom:4px">${fmt(val)}</div>
-          <div style="display:flex;gap:12px;align-items:center">
-            <span style="font-size:11px;color:${area.text};opacity:.8">${qtd} título${qtd!==1?'s':''}</span>
-            <span style="font-size:12px;font-weight:700;color:${area.text};background:${area.color}20;padding:1px 8px;border-radius:10px">${pct}%</span>
+          <div style="font-size:clamp(18px,2.2vw,28px);font-weight:800;color:${area.color};margin-bottom:10px;word-break:break-word;line-height:1.2">${fmt(val)}</div>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <span style="font-size:12px;color:${area.text};opacity:.8">${qtd} título${qtd!==1?'s':''}</span>
+            <span style="font-size:13px;font-weight:700;color:${area.text};background:${area.color}25;padding:2px 10px;border-radius:12px">${pct}%</span>
           </div>
         </div>`;
     }).join('');
@@ -1675,7 +1675,7 @@ function renderDashboard() {
   const mapaHtml = mapaCardsHtml ? `
     <div class="card" style="margin-bottom:24px">
       <div class="card-title" style="margin-bottom:16px">🗺️ Mapa de Tratativas <span style="font-size:12px;font-weight:400;color:var(--text-muted)">— clique para ver os títulos</span></div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px">
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px">
         ${mapaCardsHtml}
       </div>
     </div>` : '';
