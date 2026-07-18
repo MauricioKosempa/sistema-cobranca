@@ -3779,6 +3779,15 @@ function melhorMatchVendedor(nomeplanilha){
   });
   return bestScore>=0.5 ? {vendedor:best, score:bestScore} : null;
 }
+function melhorMatchStatus(sv){
+  const allLabels=['Automático',...Object.values(STATUS_LABELS)];
+  let best=null, bestScore=0;
+  allLabels.forEach(label=>{
+    const s=scoreSimilar(sv, label.replace(/[🔄]/g,'').trim().toLowerCase());
+    if(s>bestScore){bestScore=s;best=label;}
+  });
+  return bestScore>=0.4 ? {label:best, score:bestScore} : null;
+}
 
 function analisarImport(){
   const rows=window._irows||[];
@@ -3851,13 +3860,20 @@ function analisarImport(){
     'perdido': 'perdido', 'incobrável': 'perdido', 'incobrave': 'perdido',
   };
   const statusInvalidos = [];
+  const statusSugestoes = [];
   parsed.forEach((r,idx) => {
     const sv = (r.statusImport||'').toLowerCase().trim();
     if (sv && !(sv in STATUS_IMPORT_VALIDOS)) {
-      statusInvalidos.push({ idx, nf: r.nf, cliente: r.cliente, statusOriginal: r.statusImport });
+      const match = melhorMatchStatus(sv);
+      if (match) {
+        statusSugestoes.push({ idx, nf:r.nf, cliente:r.cliente, statusOriginal:r.statusImport, sugestao:match.label, score:match.score, confirmado:false });
+      } else {
+        statusInvalidos.push({ idx, nf:r.nf, cliente:r.cliente, statusOriginal:r.statusImport });
+      }
     }
   });
-  window._statusInvalidos = statusInvalidos;
+  window._statusInvalidos  = statusInvalidos;
+  window._statusSugestoes  = statusSugestoes;
   window._STATUS_IMPORT_VALIDOS = STATUS_IMPORT_VALIDOS;
 
   // ---- Validação de Empresa ----
@@ -3996,6 +4012,45 @@ function analisarImport(){
             <div class="alert alert-success" style="margin-top:8px">✅ Vendedor vinculado ao cliente <b>${c.cliente}</b> e salvo no cadastro.</div>
           </div>
         </div>`).join('')}
+    </div>`;
+  }
+
+  // BLOCO: Sugestões de status (fuzzy match) — layout igual ao de vendedor
+  if(statusSugestoes.length > 0){
+    html+=`<div class="card" style="border-color:#f59e0b;background:#fffbeb" id="bloco-status-sug">
+      <div class="card-title" style="color:#b45309">🔍 ${statusSugestoes.length} status identificado(s) por similaridade</div>
+      <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px">
+        A planilha contém valores que se assemelham aos status do sistema. Confirme ou corrija cada um.
+      </p>
+      ${statusSugestoes.map((ss,i)=>{
+        const statusOpts=['Automático',...Object.values(STATUS_LABELS)]
+          .map(s=>`<option value="${s}" ${s===ss.sugestao?'selected':''}>${s}</option>`).join('');
+        const pct=Math.round(ss.score*100);
+        return `<div style="border:1px solid #fcd34d;border-radius:8px;padding:14px;margin-bottom:10px;background:#fefce8" id="status-sug-${i}">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+            <div>
+              <div style="font-weight:600;font-size:14px">NF ${ss.nf||'—'} · ${ss.cliente}</div>
+              <div style="font-size:12px;color:var(--text-muted);margin-top:2px">Planilha: <b>"${ss.statusOriginal}"</b></div>
+            </div>
+            <div style="background:#fef3c7;color:#b45309;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700">${pct}% similar</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <div style="font-size:13px">Usar status:</div>
+            <select id="status-sug-sel-${i}"
+              style="border:1px solid #fcd34d;border-radius:7px;padding:7px 12px;font-size:13px;flex:1;min-width:180px">
+              ${statusOpts}
+            </select>
+            <button class="btn btn-sm" style="background:#b45309;color:#fff;white-space:nowrap"
+              onclick="confirmarSugestaoStatus(${i},${ss.idx})">✅ Confirmar</button>
+          </div>
+          <div id="status-sug-ok-${i}" class="hidden"
+            style="margin-top:8px;font-size:12px;color:#15803d;font-weight:600">✅ Confirmado</div>
+        </div>`;
+      }).join('')}
+      <div style="margin-top:4px">
+        <button class="btn btn-sm" style="background:#b45309;color:#fff"
+          onclick="confirmarTodosSugestoesStatus()">✅ Confirmar todos</button>
+      </div>
     </div>`;
   }
 
@@ -4260,9 +4315,28 @@ function corrigirTodosStatusInvalidos(novoStatus) {
   });
   window._statusInvalidos = [];
   _checarPendentesSugestao();
-  // Remove o bloco visual
   const bloco = document.getElementById('bloco-status-inv');
   if (bloco) bloco.style.opacity = '0.5';
+}
+
+function confirmarSugestaoStatus(i, idx) {
+  const sel = document.getElementById(`status-sug-sel-${i}`);
+  const novoStatus = sel?.value;
+  if (!novoStatus) { alert('Selecione um status'); return; }
+  const parsed = window._parsed || [];
+  if (parsed[idx]) parsed[idx].statusImport = novoStatus;
+  const sug = (window._statusSugestoes||[])[i];
+  if (sug) sug.confirmado = true;
+  document.getElementById(`status-sug-ok-${i}`)?.classList.remove('hidden');
+  const card = document.getElementById(`status-sug-${i}`);
+  if (card) { card.style.opacity = '0.6'; card.style.pointerEvents = 'none'; }
+  _checarPendentesSugestao();
+}
+
+function confirmarTodosSugestoesStatus() {
+  (window._statusSugestoes||[]).forEach((ss,i) => {
+    if (!ss.confirmado) confirmarSugestaoStatus(i, ss.idx);
+  });
 }
 
 function corrigirEmpresaInvalida(idx, novaEmpresa) {
@@ -4315,9 +4389,10 @@ function _checarPendentesSugestao(){
   const manPendentes=(window._clientesSemVend||[]).length;
   const okEl=document.querySelectorAll('[id^="cvsv-ok-"]:not(.hidden)').length;
   const statusPendentes=(window._statusInvalidos||[]).length;
+  const statusSugPendentes=(window._statusSugestoes||[]).filter(ss=>!ss.confirmado).length;
   const empPendentes=(window._empresaInvalidas||[]).length;
   const tratPendentes=(window._tratativaInvalidas||[]).length;
-  if(confirmados>=total && okEl>=manPendentes && statusPendentes===0 && empPendentes===0 && tratPendentes===0){
+  if(confirmados>=total && okEl>=manPendentes && statusPendentes===0 && statusSugPendentes===0 && empPendentes===0 && tratPendentes===0){
     const btns=document.getElementById('btns-import');
     if(btns) btns.innerHTML=`<button class="btn btn-primary" onclick="execImportFinal()">📥 Importar ${(window._parsed||[]).length} Registros</button>
       <button class="btn btn-ghost" onclick="renderImportar()">Cancelar</button>`;
