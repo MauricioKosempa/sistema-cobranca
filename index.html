@@ -2723,7 +2723,20 @@ function gerarRelatorioIndicadores() {
   const totalPago     = pagos.reduce((s,n)=>s+Number(n.valor||0),0);
   const totalCarteira = totalVencido + totalPago;
   const taxaInadimp   = totalCarteira > 0 ? ((totalVencido/totalCarteira)*100).toFixed(1) : '0.0';
-  const diasMedioArr  = ativos.length > 0 ? Math.round(ativos.reduce((s,n)=>s+diasAtraso(n.vencimento),0)/ativos.length) : 0;
+
+  // ── Aging ──
+  const agingBuckets = [
+    { label:'1–15 dias',  min:1,   max:15,  cor:'#fef9c3', txt:'#78350f' },
+    { label:'16–30 dias', min:16,  max:30,  cor:'#ffedd5', txt:'#7c2d12' },
+    { label:'31–60 dias', min:31,  max:60,  cor:'#fed7aa', txt:'#7c2d12' },
+    { label:'61–90 dias', min:61,  max:90,  cor:'#fecaca', txt:'#991b1b' },
+    { label:'91–120 dias',min:91,  max:120, cor:'#f9a8d4', txt:'#831843' },
+    { label:'120+ dias',  min:121, max:Infinity, cor:'#ddd6fe', txt:'#4c1d95' },
+  ];
+  const agingData = agingBuckets.map(b => {
+    const ns = ativos.filter(n => { const d = diasAtraso(n.vencimento); return d >= b.min && d <= b.max; });
+    return { ...b, cnt: ns.length, val: ns.reduce((s,n)=>s+Number(n.valor||0),0) };
+  });
 
   const valCobAv      = ativos.filter(n=>calcStatus(n)==='cobranca_avancada').reduce((s,n)=>s+Number(n.valor||0),0);
   const cntCobAv      = ativos.filter(n=>calcStatus(n)==='cobranca_avancada').length;
@@ -2810,20 +2823,49 @@ function gerarRelatorioIndicadores() {
     ${kpiSm('#7f1d1d','Jurídico',fmt(valJur),cntJur,pct(valJur))}
   </div>
 
-  <!-- LINHA 3: Taxa de Inadimplência + Prazo Médio -->
+  <!-- LINHA 3: Taxa de Inadimplência -->
   <h2>Indicadores de Eficiência</h2>
-  <div style="display:flex;gap:14px;margin-bottom:14px">
-    <div style="flex:1;border:2px solid #1e3a8a;border-radius:12px;padding:22px 26px;background:#eff6ff">
+  <div style="margin-bottom:14px">
+    <div style="border:2px solid #1e3a8a;border-radius:12px;padding:22px 26px;background:#eff6ff">
       <div style="font-size:11px;font-weight:700;color:#1e3a8a;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Taxa de Inadimplência (sobre carteira total)</div>
       <div style="font-size:42px;font-weight:900;color:#1e3a8a">${taxaInadimp}%</div>
       <div style="font-size:12px;color:#3b82f6;margin-top:6px">Carteira total: ${fmt(totalCarteira)} &nbsp;|&nbsp; Verde ≤ 2% &nbsp;·&nbsp; Laranja 2–5% &nbsp;·&nbsp; Vermelho > 5%</div>
     </div>
-    <div style="flex:1;border:2px solid #78350f;border-radius:12px;padding:22px 26px;background:#fef3c7">
-      <div style="font-size:11px;font-weight:700;color:#78350f;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Prazo Médio de Atraso</div>
-      <div style="font-size:42px;font-weight:900;color:#78350f">${diasMedioArr} dias</div>
-      <div style="font-size:12px;color:#92400e;margin-top:6px">Média aritmética dos ${ativos.length} título(s) em aberto</div>
-    </div>
   </div>
+
+  <!-- AGING -->
+  <h2>📅 Aging — Faixa de Atraso</h2>
+  <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:14px">
+    ${agingData.map(b => `
+      <div style="border-radius:10px;padding:14px 10px;background:${b.cor};text-align:center">
+        <div style="font-size:10px;font-weight:700;color:${b.txt};text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">${b.label}</div>
+        <div style="font-size:22px;font-weight:900;color:${b.txt}">${b.cnt}</div>
+        <div style="font-size:11px;color:${b.txt};opacity:.75;margin-top:4px">${fmt(b.val)}</div>
+        <div style="font-size:10px;color:${b.txt};opacity:.6;margin-top:2px">${totalVencido>0?((b.val/totalVencido)*100).toFixed(1)+'%':'—'}</div>
+      </div>`).join('')}
+  </div>
+  <table style="margin-bottom:14px">
+    <thead><tr>
+      <th>Faixa</th>
+      <th class="c">Títulos</th>
+      <th class="r">Valor (R$)</th>
+      <th class="r">% do Total Vencido</th>
+    </tr></thead>
+    <tbody>
+      ${agingData.map(b => `<tr>
+        <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-weight:600">${b.label}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:center">${b.cnt}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:700">${fmt(b.val)}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;color:#6b7280">${totalVencido>0?((b.val/totalVencido)*100).toFixed(1)+'%':'—'}</td>
+      </tr>`).join('')}
+      <tr style="background:#f8fafc">
+        <td style="padding:8px 12px;font-weight:700">Total</td>
+        <td style="padding:8px 12px;text-align:center;font-weight:700">${ativos.length}</td>
+        <td style="padding:8px 12px;text-align:right;font-weight:700;color:#dc2626">${fmt(totalVencido)}</td>
+        <td style="padding:8px 12px;text-align:right;font-weight:700">100%</td>
+      </tr>
+    </tbody>
+  </table>
 
   <!-- LINHA 4: Gráfico dinâmico mensal -->
   <h2>📈 Tendência de Inadimplência — Últimos 12 Meses (Dinâmico)</h2>
