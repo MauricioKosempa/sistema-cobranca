@@ -3827,11 +3827,25 @@ function analisarImport(){
   // ---- Validação de Status ----
   const STATUS_IMPORT_VALIDOS = {
     '': null, 'automático': null, 'automatico': null,
+    // Calculados automaticamente pela máquina de estados — aceita mas não força
+    'a vencer': null,
+    'cobrança simples': null, 'cobranca simples': null,
+    'cobrança avançada': null, 'cobranca avancada': null,
+    'aguardando cartório': null, 'aguardando cartorio': null,
+    '🔄 reprogramado': null, 'reprogramado': null,
+    // Cartório
     'enviado p/ cartório': 'cartorio', 'enviado p/ cartorio': 'cartorio',
     'cartório': 'cartorio', 'cartorio': 'cartorio',
+    // Protestado
+    'protestado': 'protestado',
+    // Emp. Cobrança
     'emp. cobrança': 'empcob', 'emp. cobranca': 'empcob',
     'empresa de cobrança': 'empcob', 'empresa de cobranca': 'empcob',
+    // Enviar p/ Jurídico
+    'enviar p/ jurídico': 'envirajur', 'enviar p/ juridico': 'envirajur',
+    // Jurídico
     'jurídico': 'juridico', 'juridico': 'juridico',
+    // Finais
     'pago': 'pago',
     'aguardar': 'aguardar',
     'perdido': 'perdido', 'incobrável': 'perdido', 'incobrave': 'perdido',
@@ -4376,10 +4390,26 @@ function execImportFinal(){
   function resolverStatusImport(statusStr) {
     const key = (statusStr||'').toLowerCase().trim();
     const mapped = STATUS_IMPORT_VALIDOS[key];
-    // mapped = null (auto), 'cartorio', 'empcob', 'juridico', 'pago', 'aguardar', 'perdido'
+    // mapped = null (auto) | 'cartorio' | 'protestado' | 'empcob' | 'envirajur' | 'juridico' | 'pago' | 'aguardar' | 'perdido'
     let baseStatus=null, dataCartorio=null, dataEmpCob=null, dataJuridico=null;
-    if (mapped === 'cartorio')  { dataCartorio = today(); }
-    if (mapped === 'empcob')    { dataEmpCob   = today(); }
+    if (mapped === 'cartorio') {
+      dataCartorio = today();
+    }
+    if (mapped === 'protestado') {
+      // Seta dataCartorio no passado para a máquina calcular 'protestado'
+      const dp = Number(DB.config.diasProtestado || 16);
+      const d = new Date(); d.setDate(d.getDate() - (dp + 1));
+      dataCartorio = d.toISOString().slice(0,10);
+    }
+    if (mapped === 'empcob') {
+      dataEmpCob = today();
+    }
+    if (mapped === 'envirajur') {
+      // Seta dataEmpCob no passado para a máquina calcular 'enviar_juridico'
+      const dj = Number(DB.config.diasJuridico || 15);
+      const d = new Date(); d.setDate(d.getDate() - (dj + 1));
+      dataEmpCob = d.toISOString().slice(0,10);
+    }
     if (mapped === 'juridico')  { dataJuridico = today(); }
     if (mapped === 'pago')      { baseStatus   = 'pago'; }
     if (mapped === 'aguardar')  { baseStatus   = 'aguardar'; }
