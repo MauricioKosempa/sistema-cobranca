@@ -1901,40 +1901,49 @@ function renderDashboard() {
     </div>
 
     <div class="card">
-      <div class="card-title flex-between">
-        <span>📊 Histórico de Inadimplência Mensal — Fechamentos</span>
-        ${isAdmin() ? `<button class="btn btn-sm" style="background:#0f172a;color:#fff;font-size:11px" onclick="fecharMesAnterior()">📅 Fechar Mês Anterior</button>` : ''}
-      </div>
-      ${(DB.historicoInadimplencia||[]).length===0
-        ? `<p class="text-muted text-center" style="padding:20px">Nenhum mês fechado ainda. Use "📌 Fechar Mês" ou "📅 Fechar Mês Anterior" para registrar.</p>`
-        : `<canvas id="chart-historico" height="100"></canvas>
-           <div style="margin-top:18px">
-             <table style="width:100%;border-collapse:collapse;font-size:13px">
-               <thead><tr style="background:#f8fafc;border-bottom:2px solid var(--border)">
-                 <th style="padding:8px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted)">Mês</th>
-                 <th style="padding:8px 12px;text-align:right;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted)">Total Vencido</th>
-                 <th style="padding:8px 12px;text-align:right;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted)">Carteira Total</th>
-                 <th style="padding:8px 12px;text-align:center;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted)">Taxa</th>
-                 <th style="padding:8px 12px;text-align:center;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted)">Títulos</th>
-                 <th style="padding:8px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted)">Fechado em</th>
-                 ${isAdmin() ? '<th style="padding:8px 12px"></th>' : ''}
-               </tr></thead>
-               <tbody>
-                 ${[...(DB.historicoInadimplencia||[])].reverse().map(h=>`
-                   <tr style="border-bottom:1px solid var(--border)">
-                     <td style="padding:8px 12px;font-weight:700">${h.label}${h.retroativo?'<span style="font-size:10px;color:#0284c7;background:#e0f2fe;border-radius:10px;padding:1px 6px;margin-left:6px">Retroativo</span>':''}</td>
-                     <td style="padding:8px 12px;text-align:right;color:#dc2626;font-weight:600">${fmt(h.totalVencido||0)}</td>
-                     <td style="padding:8px 12px;text-align:right">${fmt(h.totalCarteira||0)}</td>
-                     <td style="padding:8px 12px;text-align:center">
-                       <span style="font-weight:700;color:${(h.taxa||0)>5?'#dc2626':(h.taxa||0)>2?'#d97706':'#16a34a'}">${(h.taxa||0).toFixed(1)}%</span>
-                     </td>
-                     <td style="padding:8px 12px;text-align:center">${h.qtdTitulos||0}</td>
-                     <td style="padding:8px 12px;font-size:12px;color:var(--text-muted)">${h.fechadoEm?new Date(h.fechadoEm).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):''}</td>
-                     ${isAdmin() ? `<td style="padding:8px 12px"><button class="btn btn-ghost btn-sm" style="font-size:11px;color:#dc2626" onclick="reabrirMes('${h.mes}')">🔓 Reabrir</button></td>` : ''}
-                   </tr>`).join('')}
-               </tbody>
-             </table>
-           </div>`}
+      <div class="card-title">📊 Histórico de Inadimplência Mensal — Fechamentos</div>
+      <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px">
+        Registre a taxa de cada mês. O sistema usa a base atual no momento do fechamento e trava o valor. Novos meses ficam disponíveis a partir do 1º dia do mês seguinte.
+      </p>
+      ${(() => {
+        const MLABELS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+        const hoje = new Date();
+        // Meses disponíveis: Jan/2026 até o mês anterior ao atual
+        const limite = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1);
+        const mesesGrid = [];
+        let d = new Date(2026, 0, 1);
+        while (d <= limite) {
+          mesesGrid.push(d.toISOString().slice(0,7));
+          d = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+        }
+        if (!mesesGrid.length) return '<p class="text-muted text-center" style="padding:16px">Nenhum mês disponível para fechamento ainda.</p>';
+        const fechadosMap = {};
+        (DB.historicoInadimplencia||[]).forEach(h => { fechadosMap[h.mes] = h; });
+        const cells = mesesGrid.map(m => {
+          const [ano, mesN] = m.split('-');
+          const label = `${MLABELS[parseInt(mesN)-1]}/${ano}`;
+          const h = fechadosMap[m];
+          if (h) {
+            const corTaxa = (h.taxa||0) > 5 ? '#dc2626' : (h.taxa||0) > 2 ? '#d97706' : '#16a34a';
+            return `<div style="border:2px solid ${corTaxa};border-radius:10px;padding:12px 10px;text-align:center;background:#fff">
+              <div style="font-size:12px;font-weight:700;color:#374151;margin-bottom:6px">${label}</div>
+              <div style="font-size:20px;font-weight:900;color:${corTaxa}">${(h.taxa||0).toFixed(1)}%</div>
+              <div style="font-size:10px;color:#6b7280;margin:4px 0">✅ Fechado</div>
+              ${isAdmin() ? `<button onclick="reabrirMes('${m}')" style="margin-top:6px;font-size:10px;background:none;border:1px solid #e5e7eb;border-radius:5px;padding:2px 8px;cursor:pointer;color:#6b7280">🔓 Reabrir</button>` : ''}
+            </div>`;
+          } else {
+            return `<div style="border:2px dashed #cbd5e1;border-radius:10px;padding:12px 10px;text-align:center;background:#f8fafc">
+              <div style="font-size:12px;font-weight:700;color:#374151;margin-bottom:6px">${label}</div>
+              <div style="font-size:11px;color:#94a3b8;margin-bottom:8px">Disponível</div>
+              ${isAdmin() ? `<button onclick="fecharMesEspecifico('${m}')" style="font-size:11px;font-weight:600;background:#1e3a8a;color:#fff;border:none;border-radius:6px;padding:5px 12px;cursor:pointer">📌 Fechar</button>` : '<span style="font-size:11px;color:#94a3b8">—</span>'}
+            </div>`;
+          }
+        });
+        return `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px;margin-bottom:20px">${cells.join('')}</div>`;
+      })()}
+      ${(DB.historicoInadimplencia||[]).length > 0
+        ? `<canvas id="chart-historico" height="80"></canvas>`
+        : ''}
     </div>`;
   setTimeout(initDashboardCharts, 80);
 }
@@ -2055,47 +2064,26 @@ function fecharMesInadimplencia() {
   renderDashboard();
 }
 
-function fecharMesAnterior() {
+function fecharMesEspecifico(mes) {
+  if (!isAdmin()) { alert('⛔ Somente administradores podem fechar meses.'); return; }
   const MESES_LABEL = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
-  const mesAtual = new Date().toISOString().slice(0,7);
-  const fechados = new Set((DB.historicoInadimplencia||[]).map(h=>h.mes));
+  const [ano, mesN] = mes.split('-');
+  const label = `${MESES_LABEL[parseInt(mesN)-1]}/${ano}`;
+  const jaFechado = (DB.historicoInadimplencia||[]).find(h=>h.mes===mes);
+  if (jaFechado) { alert(`⚠️ ${label} já está fechado. Use 🔓 Reabrir para desbloquear primeiro.`); return; }
+  if (!confirm(`📌 Fechar ${label}?\n\nO sistema vai registrar a taxa de inadimplência com base na posição atual da carteira.`)) return;
 
-  // Coleta todos os meses presentes nas notas (exceto o mês atual)
-  const todosOsMeses = new Set();
-  (DB.notas||[]).forEach(n => { if (n.vencimento) todosOsMeses.add(n.vencimento.slice(0,7)); });
-
-  const naoFechados = [...todosOsMeses].filter(m => m < mesAtual && !fechados.has(m)).sort();
-
-  if (naoFechados.length === 0) {
-    alert('✅ Todos os meses anteriores já foram fechados!');
-    return;
-  }
-
-  const proximo = naoFechados[0];
-  const [ano, mesNum] = proximo.split('-');
-  const label = `${MESES_LABEL[parseInt(mesNum)-1]}/${ano}`;
-  const restantes = naoFechados.length - 1;
-  const infoRestantes = restantes > 0 ? `\n\nApós fechar, ainda restam ${restantes} mês(es) sem fechamento.` : '\n\nEste é o último mês sem fechamento.';
-
-  if (!confirm(`📅 Fechar o mês ${label}?\n\nOs indicadores serão calculados retroativamente com base nas notas com vencimento até ${label}.${infoRestantes}`)) return;
-
-  // Calcula retroativamente: notas com vencimento até o fim daquele mês
-  const notasDoMes = (DB.notas||[]).filter(n => n.vencimento && n.vencimento.slice(0,7) <= proximo);
-  const ativosDoMes = notasDoMes.filter(n => !['pago','perdido','reprogramado'].includes(calcStatus(n)));
-  const pagosDoMes  = notasDoMes.filter(n => calcStatus(n) === 'pago');
-  const totalVencido  = ativosDoMes.reduce((s,n)=>s+Number(n.valor||0),0);
-  const totalCarteira = totalVencido + pagosDoMes.reduce((s,n)=>s+Number(n.valor||0),0);
+  const ativos = (DB.notas||[]).filter(n=>!['pago','perdido','reprogramado'].includes(calcStatus(n))&&diasAtraso(n.vencimento)>0);
+  const pagos  = (DB.notas||[]).filter(n=>calcStatus(n)==='pago');
+  const totalVencido  = ativos.reduce((s,n)=>s+Number(n.valor||0),0);
+  const totalCarteira = totalVencido + pagos.reduce((s,n)=>s+Number(n.valor||0),0);
   const taxa = totalCarteira > 0 ? parseFloat(((totalVencido/totalCarteira)*100).toFixed(2)) : 0;
 
   if (!DB.historicoInadimplencia) DB.historicoInadimplencia = [];
-  DB.historicoInadimplencia.push({ mes: proximo, label, totalVencido, totalCarteira, taxa, qtdTitulos: ativosDoMes.length, fechadoEm: new Date().toISOString(), retroativo: true });
+  DB.historicoInadimplencia.push({ mes, label, totalVencido, totalCarteira, taxa, qtdTitulos: ativos.length, fechadoEm: new Date().toISOString() });
   DB.historicoInadimplencia.sort((a,b)=>a.mes.localeCompare(b.mes));
   saveDB();
-
-  const msg = restantes > 0
-    ? `✅ ${label} fechado!\nTaxa retroativa: ${taxa.toFixed(1)}%\n\nAinda restam ${restantes} mês(es). Clique em "Fechar Mês Anterior" para continuar.`
-    : `✅ ${label} fechado!\nTaxa retroativa: ${taxa.toFixed(1)}%\n\n✅ Todos os meses anteriores foram fechados!`;
-  alert(msg);
+  alert(`✅ ${label} fechado!\nTaxa de inadimplência registrada: ${taxa.toFixed(1)}%`);
   renderDashboard();
 }
 
