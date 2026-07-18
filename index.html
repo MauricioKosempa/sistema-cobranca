@@ -1661,7 +1661,7 @@ function renderDashboard() {
     gruposTratativa[key].push(n);
   });
 
-  const ordemAreas = [...TRATATIVAS_AREAS.map(a=>a.key), '__sem__'];
+  const ordemAreas = [...TRATATIVAS_AREAS.map(a=>a.key)];
   const mapaCardsHtml = ordemAreas
     .filter(key => gruposTratativa[key]?.length > 0)
     .map(key => {
