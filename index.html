@@ -101,6 +101,7 @@
   .badge-pago { background: #dcfce7; color: #15803d; }
   .badge-aguardar { background: #e0f2fe; color: #075985; }
   .badge-perdido { background: #f1f5f9; color: #475569; }
+  .badge-reprogramado { background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; font-weight: 800; }
   .btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 7px; font-size: 13px; font-weight: 500; border: none; cursor: pointer; transition: all .15s; text-decoration: none; }
   .btn-primary { background: var(--primary-light); color: #fff; }
   .btn-primary:hover { background: var(--primary); }
@@ -400,7 +401,8 @@ const STATUS_LABELS = {
   a_vencer: 'A Vencer', cobranca_simples: 'Cobrança Simples', cobranca_avancada: 'Cobrança Avançada',
   aguardando_cartorio: 'Aguardando Cartório', enviado_cartorio: 'Enviado p/ Cartório',
   protestado: 'Protestado', emp_cobranca: 'Emp. Cobrança', enviar_juridico: 'Enviar p/ Jurídico',
-  juridico: 'Jurídico', pago: 'Pago', aguardar: 'Aguardar', perdido: 'Perdido'
+  juridico: 'Jurídico', pago: 'Pago', aguardar: 'Aguardar', perdido: 'Perdido',
+  reprogramado: '🔄 Reprogramado'
 };
 
 function diasAtraso(venc) {
@@ -421,6 +423,14 @@ function calcStatus(nota) {
   if (nota.baseStatus === 'pago') return 'pago';
   if (nota.baseStatus === 'perdido') return 'perdido';
   if (nota.baseStatus === 'aguardar') return 'aguardar';
+  // Reprogramado: dentro do prazo → 'reprogramado' (fora da inadimplência)
+  // Reprogramado expirado → 'aguardando_cartorio' e não pode mais reprogramar
+  if (nota.reprogramado && nota.dataReprogramacao) {
+    const hoje = new Date(); hoje.setHours(0,0,0,0);
+    const dr = new Date(nota.dataReprogramacao + 'T00:00:00'); dr.setHours(0,0,0,0);
+    if (hoje <= dr) return 'reprogramado';
+    // Expirou — cai em aguardando_cartorio automaticamente
+  }
   if (nota.dataJuridico) return 'juridico';
   const dj = Number(DB.config.diasJuridico || 15);
   const dp = Number(DB.config.diasProtestado || 16);
@@ -1499,7 +1509,7 @@ function renderDashboard() {
     if (s === 'emp_cobranca' || s === 'enviar_juridico') { flagEmp += (s==='enviar_juridico'?1:0); valEmp += Number(n.valor||0); }
     if (s === 'juridico') { flagJur++; valJur += Number(n.valor||0); }
     const d = diasAtraso(n.vencimento);
-    if (d > 0) {
+    if (d > 0 && s !== 'reprogramado') {
       totalVencido += v;
       if (d<=15) {aging['1-15']++;agingVal['1-15']+=v;}
       else if(d<=30){aging['16-30']++;agingVal['16-30']+=v;}
@@ -1522,7 +1532,7 @@ function renderDashboard() {
   const vencidoAnoAtual = notas.filter(n => {
     const s = calcStatus(n);
     return (n.vencimento||'').startsWith(String(anoAtual))
-      && !['pago','perdido'].includes(s)
+      && !['pago','perdido','reprogramado'].includes(s)
       && diasAtraso(n.vencimento) > 0;
   }).reduce((s,n) => s + Number(n.valor||0), 0);
   const taxaReal = fatAcumulado > 0 ? ((vencidoAnoAtual / fatAcumulado) * 100).toFixed(2) : null;
@@ -1992,7 +2002,7 @@ function fecharMesInadimplencia() {
   if (jaFechado && !confirm(`Mês ${jaFechado.label} já foi fechado. Sobrescrever?`)) return;
   if (jaFechado) DB.historicoInadimplencia = DB.historicoInadimplencia.filter(h=>h.mes!==mesAtual);
 
-  const ativos = (DB.notas||[]).filter(n=>!['pago','perdido'].includes(calcStatus(n))&&diasAtraso(n.vencimento)>0);
+  const ativos = (DB.notas||[]).filter(n=>!['pago','perdido','reprogramado'].includes(calcStatus(n))&&diasAtraso(n.vencimento)>0);
   const pagos  = (DB.notas||[]).filter(n=>calcStatus(n)==='pago');
   const totalVencido   = ativos.reduce((s,n)=>s+Number(n.valor||0),0);
   const totalCarteira  = totalVencido + pagos.reduce((s,n)=>s+Number(n.valor||0),0);
@@ -2031,6 +2041,10 @@ function renderVencidos() {
           </select>
         </div>
         <div class="gap-8" style="margin-left:10px;flex-shrink:0">
+          <button id="btn-ver-reprog" class="btn btn-ghost btn-sm" onclick="toggleFiltroReprog()"
+            style="border:1px solid #6ee7b7;color:#065f46;background:#f0fdf4" title="Ver títulos reprogramados">
+            🔄 Reprogramados
+          </button>
           <button class="btn btn-primary btn-sm" onclick="openNotaForm()">➕ Novo Lançamento</button>
           <button class="btn btn-ghost btn-sm" onclick="exportVencidos()">📥 Exportar</button>
         </div>
@@ -2045,6 +2059,17 @@ function renderVencidos() {
   filterVencidos();
 }
 
+let _filtroReprogAtivo = false;
+function toggleFiltroReprog() {
+  _filtroReprogAtivo = !_filtroReprogAtivo;
+  const btn = document.getElementById('btn-ver-reprog');
+  if (btn) {
+    btn.style.background = _filtroReprogAtivo ? '#065f46' : '#f0fdf4';
+    btn.style.color = _filtroReprogAtivo ? '#fff' : '#065f46';
+    btn.textContent = _filtroReprogAtivo ? '✅ Só Reprogramados' : '🔄 Reprogramados';
+  }
+  filterVencidos();
+}
 function filterVencidos() {
   const q = (document.getElementById('v-q')?.value||'').toLowerCase();
   const sf = document.getElementById('v-status')?.value||'';
@@ -2052,6 +2077,10 @@ function filterVencidos() {
   const ef = document.getElementById('v-emp')?.value||'';
   const notas = DB.notas.filter(n=>{
     const s=calcStatus(n);
+    if (_filtroReprogAtivo) {
+      // Modo reprogramados: mostrar apenas os que têm reprogramação
+      if (!n.reprogramado) return false;
+    }
     if(sf&&s!==sf) return false;
     if(vf&&n.vendedor!==vf) return false;
     if(ef&&n.empresa!==ef) return false;
@@ -2085,6 +2114,7 @@ function filterVencidos() {
       <td class="text-right">${fmt(n.valor)}</td>
       <td>
         ${statusBadge(s)}
+        ${n.reprogramado?`<div style="margin-top:3px"><span style="font-size:10px;background:#d1fae5;color:#065f46;border:1px solid #6ee7b7;padding:1px 7px;border-radius:10px;font-weight:700">${diasAtraso(n.dataReprogramacao||'')>0?'⚠️ Reprog. vencida':'📅 Reprog. '+fmtDate(n.dataReprogramacao)}</span></div>`:''}
         ${n.emTrativaCom ? `<div style="margin-top:4px" id="trat-badge-${n.id}">${badgeTratativa(n.emTrativaCom)}</div>` : `<span id="trat-badge-${n.id}"></span>`}
       </td>
       <td title="${tooltipCrm}" style="min-width:220px;white-space:normal">
@@ -2160,6 +2190,15 @@ function buildActionBtns(n, s) {
   const id = n.id, r = [];
   if (false) { // E-mail e WhatsApp por nota removidos — envio em massa pelo Dashboard
   }
+  // Reprogramar: mostrar apenas se título vencido e ainda não reprogramado (ou reprogramado não expirado)
+  if (diasAtraso(n.vencimento) > 0 && !['pago','perdido','aguardar'].includes(s)) {
+    if (n.reprogramado && s !== 'reprogramado') {
+      // Expirou reprogramação → aviso inline
+      r.push(`<span style="font-size:10px;background:#fef2f2;color:#b91c1c;padding:2px 7px;border-radius:8px;font-weight:700;white-space:nowrap">⚠️ Reprog. vencida</span>`);
+    } else if (!n.reprogramado && s !== 'reprogramado') {
+      r.push(`<button class="flag-btn" style="background:#d1fae5;color:#065f46" onclick="abrirReprogramacao('${n.id}')">📅 Reprog.</button>`);
+    }
+  }
   if (s==='aguardando_cartorio') r.push(`<button class="flag-btn" style="background:#fce7f3;color:#9d174d" onclick="flagCartorio('${id}')">⚖️ Enviar Cartório</button>`);
   if (s==='protestado') r.push(`<button class="flag-btn" style="background:#fdf4ff;color:#7e22ce" onclick="flagEmpCob('${id}')">🏢 Emp. Cobrança</button>`);
   if (s==='enviar_juridico') r.push(`<button class="flag-btn" style="background:#fee2e2;color:#7f1d1d" onclick="flagJuridico('${id}')">⚖️ Enviar Jurídico</button>`);
@@ -2170,6 +2209,63 @@ function buildActionBtns(n, s) {
     r.push(`<button class="flag-btn" style="background:#f1f5f9;color:#475569" onclick="setBase('${id}','perdido')">🚫 Perdido</button>`);
   }
   return r.join('');
+}
+
+function abrirReprogramacao(id) {
+  const n = DB.notas.find(x=>x.id===id); if(!n) return;
+  if (n.reprogramado && diasAtraso(n.dataReprogramacao||'') > 0) {
+    alert('⚠️ Este título já foi reprogramado e a data venceu.\nEnvie ao Cartório — nova reprogramação não é permitida.');
+    return;
+  }
+  openModal(`
+    <h2>📅 Reprogramar Pagamento</h2>
+    <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:14px;margin-bottom:16px">
+      <div style="font-size:13px;font-weight:600;color:#065f46;margin-bottom:6px">ℹ️ O que acontece ao reprogramar:</div>
+      <ul style="font-size:12px;color:#065f46;margin:0;padding-left:18px;line-height:1.8">
+        <li>O título <b>sai da inadimplência</b> até a nova data</li>
+        <li>Status muda automaticamente para <b>🔄 Reprogramado</b></li>
+        <li>Ao vencer novamente, o status vira <b>Aguardando Cartório</b> automaticamente</li>
+        <li>⚠️ <b>Reprogramação permitida apenas uma vez</b> — se vencer novamente, vai ao Cartório</li>
+      </ul>
+    </div>
+    <div style="background:#fff;border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:16px;font-size:13px">
+      <b>${n.cliente}</b> · NF ${n.nf} · ${fmt(n.valor)}<br>
+      <span style="color:var(--danger)">Vencimento original: ${fmtDate(n.vencimento)} (${diasAtraso(n.vencimento)} dias em atraso)</span>
+    </div>
+    <div class="form-group">
+      <label>Nova data de pagamento comprometida pelo cliente *</label>
+      <input type="date" id="reprog-data" min="${today()}">
+      <span style="font-size:11px;color:var(--text-muted);margin-top:3px;display:block">Deve ser uma data futura</span>
+    </div>
+    <div class="form-group">
+      <label>Observação (opcional)</label>
+      <input type="text" id="reprog-obs" placeholder="Ex: Cliente confirmou pagamento até esta data por e-mail">
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-primary" onclick="salvarReprogramacao('${id}')">📅 Confirmar Reprogramação</button>
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+    </div>
+  `);
+}
+
+function salvarReprogramacao(id) {
+  const n = DB.notas.find(x=>x.id===id); if(!n) return;
+  const data = document.getElementById('reprog-data')?.value;
+  const obs  = document.getElementById('reprog-obs')?.value?.trim()||'';
+  if (!data) { alert('Informe a nova data de pagamento.'); return; }
+  if (diasAtraso(data) > 0) { alert('A data deve ser futura.'); return; }
+  n.reprogramado = true;
+  n.dataReprogramacao = data;
+  addHist(n, 'Reprogramação', `Pagamento reprogramado para ${fmtDate(data)}${obs?' — '+obs:''}`);
+  saveDB();
+  closeModal();
+  if (currentPage==='vencidos') filterVencidos(); else renderDashboard();
+  // Feedback
+  const toast = document.createElement('div');
+  toast.style.cssText='position:fixed;bottom:24px;right:24px;background:#065f46;color:#fff;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:600;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.2)';
+  toast.textContent='✅ Reprogramado! Título saiu da inadimplência até '+fmtDate(data);
+  document.body.appendChild(toast);
+  setTimeout(()=>toast.remove(),4000);
 }
 
 /* ============================================================
@@ -2230,6 +2326,12 @@ function openNotaForm(id) {
             <option value="empcob"   ${n.dataEmpCob&&!n.dataJuridico?'selected':''}>🏢 Empresa de Cobrança</option>
             <option value="juridico" ${n.dataJuridico?'selected':''}>⚠️ Jurídico</option>
           </optgroup>
+          <optgroup label="— Reprogramação de pagamento —">
+            <option value="reprogramar" ${n.reprogramado&&n.dataReprogramacao&&!n.reprogramado_expirado?'selected':''}
+              ${n.reprogramado&&diasAtraso(n.dataReprogramacao||'')>0?'disabled title="Já reprogramado e expirado — enviar ao Cartório"':''}>
+              🔄 Reprogramar pagamento${n.reprogramado?' (já utilizado)':''}
+            </option>
+          </optgroup>
           <optgroup label="— Status finais —">
             <option value="pago"    ${n.baseStatus==='pago'?'selected':''}>✅ Pago</option>
             <option value="aguardar"${n.baseStatus==='aguardar'?'selected':''}>⏸️ Aguardar (pausar cobrança)</option>
@@ -2259,6 +2361,15 @@ function openNotaForm(id) {
         <label>Data do Pagamento</label>
         <input type="date" id="nf-dt-pago" value="${n.dataPagamento||today()}">
       </div>
+
+      <div class="form-group" id="nf-dt-reprog-wrap" style="${n.reprogramado&&n.dataReprogramacao&&diasAtraso(n.dataReprogramacao||'')<=0?'':'display:none'}">
+        <label>📅 Nova data de pagamento programada</label>
+        <input type="date" id="nf-dt-reprog" value="${n.dataReprogramacao||''}">
+        <span style="font-size:11px;color:#065f46;margin-top:3px;display:block">
+          ${n.reprogramado?`⚠️ Este título já foi reprogramado. Vencimento original: <b>${fmtDate(n.vencimento)}</b>. Ao vencer novamente, será enviado ao Cartório automaticamente.`:'Informe a nova data comprometida pelo cliente. O título sairá da inadimplência até essa data.'}
+        </span>
+        ${n.reprogramado&&diasAtraso(n.dataReprogramacao||'')>0?`<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:6px;padding:8px 10px;margin-top:6px;font-size:12px;color:#b91c1c;font-weight:600">⚠️ Data de reprogramação vencida — este título deve ser enviado ao Cartório. Nova reprogramação não é permitida.</div>`:''}
+      </div>
     </div>` : ''}
     <div class="form-actions">
       <button class="btn btn-primary" onclick="saveNota('${id||''}')">💾 Salvar</button>
@@ -2273,10 +2384,11 @@ function onEtapaChange() {
     const el = document.getElementById(id);
     if(el) el.style.display = visible ? '' : 'none';
   };
-  show('nf-dt-cartorio-wrap', v === 'cartorio');
-  show('nf-dt-empcob-wrap',   v === 'empcob');
-  show('nf-dt-juridico-wrap', v === 'juridico');
-  show('nf-dt-pago-wrap',     v === 'pago');
+  show('nf-dt-cartorio-wrap',  v === 'cartorio');
+  show('nf-dt-empcob-wrap',    v === 'empcob');
+  show('nf-dt-juridico-wrap',  v === 'juridico');
+  show('nf-dt-pago-wrap',      v === 'pago');
+  show('nf-dt-reprog-wrap',    v === 'reprogramar');
 }
 
 function saveNota(id) {
@@ -2306,6 +2418,19 @@ function saveNota(id) {
   if (etapa === 'juridico') { dataCartorio = document.getElementById('nf-dt-cartorio')?.value || null;
                                dataEmpCob   = document.getElementById('nf-dt-empcob')?.value   || null;
                                dataJuridico = document.getElementById('nf-dt-juridico')?.value || today(); }
+  if (etapa === 'reprogramar') {
+    // Verificar se já foi reprogramado e está expirado → bloquear
+    if (id) {
+      const nExist = DB.notas.find(x => x.id === id);
+      if (nExist?.reprogramado && nExist.dataReprogramacao && diasAtraso(nExist.dataReprogramacao) > 0) {
+        alert('⚠️ Este título já foi reprogramado e a data venceu.\nNão é possível reprogramar novamente. Envie ao Cartório.');
+        return;
+      }
+    }
+    const dataReprog = document.getElementById('nf-dt-reprog')?.value;
+    if (!dataReprog) { alert('Informe a nova data de pagamento programada.'); return; }
+    if (diasAtraso(dataReprog) > 0) { alert('A data de reprogramação deve ser futura.'); return; }
+  }
 
   if (!nf)   { alert('Número da NF é obrigatório'); return; }
   if (!cli)  { alert('Selecione o cliente'); return; }
@@ -2320,6 +2445,7 @@ function saveNota(id) {
     if (Number(n.valor) !== valor) changed.push(`Valor: ${fmt(n.valor)} → ${fmt(valor)}`);
     if (etapa !== 'auto') changed.push(`Etapa ajustada manualmente: ${etapa}`);
     if ((n.emTrativaCom||'') !== emTrativaCom) changed.push(`Em tratativa com: ${n.emTrativaCom||'—'} → ${emTrativaCom||'—'}`);
+    const dataReprogVal = etapa==='reprogramar' ? (document.getElementById('nf-dt-reprog')?.value||null) : null;
     Object.assign(n, {
       nf, cliente: cli, vendedor: vend, empresa: emp, emissao: emis, vencimento: venc, valor,
       baseStatus: base||null,
@@ -2327,6 +2453,8 @@ function saveNota(id) {
       dataEmpCob:   etapa==='auto' ? n.dataEmpCob   : dataEmpCob,
       dataJuridico: etapa==='auto' ? n.dataJuridico  : dataJuridico,
       dataPagamento: etapa==='pago' ? dataPagamento : n.dataPagamento,
+      reprogramado: etapa==='reprogramar' ? true : (n.reprogramado||false),
+      dataReprogramacao: etapa==='reprogramar' ? dataReprogVal : (n.dataReprogramacao||null),
       emTrativaCom
     });
     if (changed.length) addHist(n, 'Edição', changed.join('; '));
@@ -2405,7 +2533,7 @@ function gerarRelatorioIndicadores() {
   const empresa = DB.config.empresaNome || 'Reconlog';
   const data = new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'});
 
-  const ativos = notas.filter(n => !['pago','perdido'].includes(calcStatus(n)) && diasAtraso(n.vencimento) > 0);
+  const ativos = notas.filter(n => !['pago','perdido','reprogramado'].includes(calcStatus(n)) && diasAtraso(n.vencimento) > 0);
   const pagos  = notas.filter(n => calcStatus(n) === 'pago');
   const totalVencido  = ativos.reduce((s,n)=>s+Number(n.valor||0),0);
   const totalPago     = pagos.reduce((s,n)=>s+Number(n.valor||0),0);
