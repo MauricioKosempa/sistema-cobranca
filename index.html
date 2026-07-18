@@ -6,6 +6,7 @@
 <title>Sistema de Cobrança – Reconlog</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.39.0/lib/msal-browser.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
   :root {
     --sidebar-w: 220px;
@@ -273,6 +274,7 @@ function defaultDB() {
     notas: [], clientes: [], vendedores: [],
     empresas: ['Reconlog','Reconlog Rental','RL Estruturas','RL Montagens','RL Brasil'],
     faturamento: {}, faturamentoEmp: _seedFaturamento(), importacoes: [], crm: [],
+    historicoInadimplencia: [],
     templates: {
       cobranca_simples: {
         emailSubj: 'Lembrete de Vencimento – NF {{nf}}',
@@ -1871,12 +1873,139 @@ function renderDashboard() {
       ${ranking.length===0
         ? `<p class="text-muted text-center" style="padding:20px">Nenhum dado. <a href="#" onclick="navigate('importar');return false">Importe uma planilha</a> para começar.</p>`
         : `<div>${rankingHtml}</div>`}
+    </div>
+
+    <div class="card">
+      <div class="card-title flex-between">
+        <span>📈 Tendência de Inadimplência — Últimos 12 Meses</span>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:11px;color:var(--text-muted)">Vencimentos em aberto por mês</span>
+          ${isAdmin() ? `<button class="btn btn-sm" style="background:#1e3a8a;color:#fff;font-size:11px" onclick="fecharMesInadimplencia()">📌 Fechar Mês</button>` : ''}
+        </div>
+      </div>
+      <canvas id="chart-mensal" height="100"></canvas>
+    </div>
+
+    <div class="card">
+      <div class="card-title flex-between">
+        <span>📊 Histórico de Inadimplência Mensal — Fechamentos</span>
+        <span style="font-size:11px;color:var(--text-muted)">Registros fixos por fechamento de mês</span>
+      </div>
+      ${(DB.historicoInadimplencia||[]).length===0
+        ? `<p class="text-muted text-center" style="padding:20px">Nenhum mês fechado ainda. Use o botão "📌 Fechar Mês" acima para registrar o primeiro.</p>`
+        : `<canvas id="chart-historico" height="100"></canvas>`}
     </div>`;
+  setTimeout(initDashboardCharts, 80);
 }
 
 function toggleVendor(i) {
   document.getElementById(`vcli-${i}`).classList.toggle('open');
   document.getElementById(`vexp-${i}`).classList.toggle('open');
+}
+
+let _chartMensal = null, _chartHistorico = null;
+
+function initDashboardCharts() {
+  // — Gráfico dinâmico: vencimentos em aberto dos últimos 12 meses —
+  const canvasMensal = document.getElementById('chart-mensal');
+  if (canvasMensal) {
+    const hoje = new Date();
+    const labels = [], valores = [];
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1);
+      const mesStr = d.toISOString().slice(0,7);
+      const meses = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+      labels.push(`${meses[d.getMonth()]}/${String(d.getFullYear()).slice(2)}`);
+      const total = (DB.notas||[])
+        .filter(n => !['pago','perdido'].includes(calcStatus(n)) && diasAtraso(n.vencimento)>0 && n.vencimento?.slice(0,7)===mesStr)
+        .reduce((s,n)=>s+Number(n.valor||0),0);
+      valores.push(total);
+    }
+    if (_chartMensal) _chartMensal.destroy();
+    _chartMensal = new Chart(canvasMensal.getContext('2d'), {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Total Vencido em Aberto (R$)',
+          data: valores,
+          backgroundColor: valores.map(v => v > 0 ? 'rgba(220,38,38,0.7)' : 'rgba(148,163,184,0.4)'),
+          borderColor: valores.map(v => v > 0 ? '#dc2626' : '#94a3b8'),
+          borderWidth: 1.5,
+          borderRadius: 6
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: {display: false},
+          tooltip: {callbacks: {label: ctx => ' R$ ' + ctx.raw.toLocaleString('pt-BR',{minimumFractionDigits:2})}}
+        },
+        scales: {
+          y: {ticks: {callback: v => 'R$'+v.toLocaleString('pt-BR',{notation:'compact',compactDisplay:'short'})}, grid: {color:'#e2e8f0'}},
+          x: {grid: {display: false}}
+        }
+      }
+    });
+  }
+
+  // — Gráfico estático: histórico fechado —
+  const canvasHist = document.getElementById('chart-historico');
+  if (canvasHist && (DB.historicoInadimplencia||[]).length > 0) {
+    const hist = DB.historicoInadimplencia;
+    if (_chartHistorico) _chartHistorico.destroy();
+    _chartHistorico = new Chart(canvasHist.getContext('2d'), {
+      type: 'line',
+      data: {
+        labels: hist.map(h => h.label),
+        datasets: [{
+          label: 'Taxa de Inadimplência (%)',
+          data: hist.map(h => h.taxa),
+          borderColor: '#1e3a8a',
+          backgroundColor: 'rgba(30,58,138,0.08)',
+          fill: true,
+          tension: 0.35,
+          pointBackgroundColor: hist.map(h => h.taxa > 5 ? '#dc2626' : h.taxa > 2 ? '#d97706' : '#16a34a'),
+          pointRadius: 5,
+          pointHoverRadius: 7,
+          borderWidth: 2.5
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: {display: false},
+          tooltip: {callbacks: {label: ctx => ` ${ctx.raw.toFixed(1)}% de inadimplência`}}
+        },
+        scales: {
+          y: {ticks: {callback: v => v+'%'}, grid: {color:'#e2e8f0'}, min: 0},
+          x: {grid: {display: false}}
+        }
+      }
+    });
+  }
+}
+
+function fecharMesInadimplencia() {
+  const mesAtual = new Date().toISOString().slice(0,7);
+  const jaFechado = (DB.historicoInadimplencia||[]).find(h=>h.mes===mesAtual);
+  if (jaFechado && !confirm(`Mês ${jaFechado.label} já foi fechado. Sobrescrever?`)) return;
+  if (jaFechado) DB.historicoInadimplencia = DB.historicoInadimplencia.filter(h=>h.mes!==mesAtual);
+
+  const ativos = (DB.notas||[]).filter(n=>!['pago','perdido'].includes(calcStatus(n))&&diasAtraso(n.vencimento)>0);
+  const pagos  = (DB.notas||[]).filter(n=>calcStatus(n)==='pago');
+  const totalVencido   = ativos.reduce((s,n)=>s+Number(n.valor||0),0);
+  const totalCarteira  = totalVencido + pagos.reduce((s,n)=>s+Number(n.valor||0),0);
+  const taxa = totalCarteira>0 ? parseFloat(((totalVencido/totalCarteira)*100).toFixed(2)) : 0;
+  const meses=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  const [ano, mes] = mesAtual.split('-');
+  const label = `${meses[parseInt(mes)-1]}/${ano}`;
+  if (!DB.historicoInadimplencia) DB.historicoInadimplencia = [];
+  DB.historicoInadimplencia.push({mes:mesAtual, label, totalVencido, totalCarteira, taxa, qtdTitulos:ativos.length, fechadoEm:new Date().toISOString()});
+  DB.historicoInadimplencia.sort((a,b)=>a.mes.localeCompare(b.mes));
+  saveDB();
+  alert(`✅ ${label} fechado! Taxa de inadimplência: ${taxa.toFixed(1)}%`);
+  renderDashboard();
 }
 
 /* ============================================================
@@ -2276,171 +2405,161 @@ function gerarRelatorioIndicadores() {
   const empresa = DB.config.empresaNome || 'Reconlog';
   const data = new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'});
 
-  // Calcular todos os indicadores
   const ativos = notas.filter(n => !['pago','perdido'].includes(calcStatus(n)) && diasAtraso(n.vencimento) > 0);
   const pagos  = notas.filter(n => calcStatus(n) === 'pago');
-  const totalVencido   = ativos.reduce((s,n)=>s+Number(n.valor||0),0);
-  const totalPago      = pagos.reduce((s,n)=>s+Number(n.valor||0),0);
-  const valCobAv       = ativos.filter(n=>calcStatus(n)==='cobranca_avancada').reduce((s,n)=>s+Number(n.valor||0),0);
-  const cntCobAv       = ativos.filter(n=>calcStatus(n)==='cobranca_avancada').length;
-  const valAguardCart  = ativos.filter(n=>calcStatus(n)==='aguardando_cartorio').reduce((s,n)=>s+Number(n.valor||0),0);
-  const cntAguardCart  = ativos.filter(n=>calcStatus(n)==='aguardando_cartorio').length;
-  const valProt        = ativos.filter(n=>['enviado_cartorio','protestado'].includes(calcStatus(n))).reduce((s,n)=>s+Number(n.valor||0),0);
-  const cntProt        = ativos.filter(n=>['enviado_cartorio','protestado'].includes(calcStatus(n))).length;
-  const valEmp         = ativos.filter(n=>['emp_cobranca','enviar_juridico'].includes(calcStatus(n))).reduce((s,n)=>s+Number(n.valor||0),0);
-  const cntEmp         = ativos.filter(n=>['emp_cobranca','enviar_juridico'].includes(calcStatus(n))).length;
-  const valJur         = ativos.filter(n=>calcStatus(n)==='juridico').reduce((s,n)=>s+Number(n.valor||0),0);
-  const cntJur         = ativos.filter(n=>calcStatus(n)==='juridico').length;
-
-  const pct = (v) => totalVencido > 0 ? ((v/totalVencido)*100).toFixed(1)+'%' : '—';
-
-  // Mapa de Tratativas
-  const gruposTrat = {};
-  ativos.forEach(n => {
-    const key = n.emTrativaCom || 'Sem definição';
-    if(!gruposTrat[key]) gruposTrat[key] = {val:0,cnt:0};
-    gruposTrat[key].val += Number(n.valor||0);
-    gruposTrat[key].cnt++;
-  });
-  const tratRows = Object.entries(gruposTrat).sort((a,b)=>b[1].val-a[1].val).map(([k,v])=>`
-    <tr>
-      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${k}</td>
-      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:700">${fmt(v.val)}</td>
-      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:center">${v.cnt}</td>
-      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;color:#6b7280">${pct(v.val)}</td>
-    </tr>`).join('');
-
-  // Top 10 maiores devedores
-  const porCliente = {};
-  ativos.forEach(n => {
-    if(!porCliente[n.cliente]) porCliente[n.cliente] = {val:0,cnt:0};
-    porCliente[n.cliente].val += Number(n.valor||0);
-    porCliente[n.cliente].cnt++;
-  });
-  const top10 = Object.entries(porCliente).sort((a,b)=>b[1].val-a[1].val).map(([k,v],i)=>`
-    <tr>
-      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-weight:600">#${i+1}</td>
-      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${k}</td>
-      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:700;color:#dc2626">${fmt(v.val)}</td>
-      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:center">${v.cnt}</td>
-      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;color:#6b7280">${pct(v.val)}</td>
-    </tr>`).join('');
-
-  // Por vendedor
-  const porVendedor = {};
-  ativos.forEach(n => {
-    const v = n.vendedor || 'Sem vendedor';
-    if(!porVendedor[v]) porVendedor[v] = {val:0,cnt:0};
-    porVendedor[v].val += Number(n.valor||0);
-    porVendedor[v].cnt++;
-  });
-  const vendRows = Object.entries(porVendedor).sort((a,b)=>b[1].val-a[1].val).map(([k,v],i)=>`
-    <tr>
-      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-weight:600">#${i+1}</td>
-      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${k}</td>
-      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:700;color:#dc2626">${fmt(v.val)}</td>
-      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:center">${v.cnt}</td>
-      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;color:#6b7280">${pct(v.val)}</td>
-    </tr>`).join('');
-
-  // Por empresa
-  const porEmpresa = {};
-  ativos.forEach(n => {
-    const e = n.empresa || 'Sem empresa';
-    if(!porEmpresa[e]) porEmpresa[e] = {val:0,cnt:0};
-    porEmpresa[e].val += Number(n.valor||0);
-    porEmpresa[e].cnt++;
-  });
-  const empRows = Object.entries(porEmpresa).sort((a,b)=>b[1].val-a[1].val).map(([k,v])=>`
-    <tr>
-      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${k}</td>
-      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:700">${fmt(v.val)}</td>
-      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:center">${v.cnt}</td>
-      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;color:#6b7280">${pct(v.val)}</td>
-    </tr>`).join('');
-
+  const totalVencido  = ativos.reduce((s,n)=>s+Number(n.valor||0),0);
+  const totalPago     = pagos.reduce((s,n)=>s+Number(n.valor||0),0);
   const totalCarteira = totalVencido + totalPago;
-  const taxaInadimplencia = totalCarteira > 0 ? ((totalVencido / totalCarteira) * 100).toFixed(1) + '%' : '—';
-  const ticketMedio = ativos.length > 0 ? totalVencido / ativos.length : 0;
-  const diasMedioAtraso = ativos.length > 0
-    ? Math.round(ativos.reduce((s,n)=>s+diasAtraso(n.vencimento),0) / ativos.length) : 0;
+  const taxaInadimp   = totalCarteira > 0 ? ((totalVencido/totalCarteira)*100).toFixed(1) : '0.0';
+  const diasMedioArr  = ativos.length > 0 ? Math.round(ativos.reduce((s,n)=>s+diasAtraso(n.vencimento),0)/ativos.length) : 0;
 
-  const kpiCard = (cor, label, valor, sub1, sub2) => `
-    <div style="border:2px solid ${cor};border-radius:10px;padding:14px 16px;background:#fff">
-      <div style="font-size:10px;font-weight:700;color:${cor};text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">${label}</div>
-      <div style="font-size:18px;font-weight:800;color:${cor};word-break:break-word;line-height:1.2">${valor}</div>
-      ${sub1 ? `<div style="font-size:11px;color:#6b7280;margin-top:5px">${sub1}${sub2?' &nbsp;·&nbsp; '+sub2:''}</div>` : ''}
-    </div>`;
+  const valCobAv      = ativos.filter(n=>calcStatus(n)==='cobranca_avancada').reduce((s,n)=>s+Number(n.valor||0),0);
+  const cntCobAv      = ativos.filter(n=>calcStatus(n)==='cobranca_avancada').length;
+  const valAguardCart = ativos.filter(n=>calcStatus(n)==='aguardando_cartorio').reduce((s,n)=>s+Number(n.valor||0),0);
+  const cntAguardCart = ativos.filter(n=>calcStatus(n)==='aguardando_cartorio').length;
+  const valProt       = ativos.filter(n=>['enviado_cartorio','protestado'].includes(calcStatus(n))).reduce((s,n)=>s+Number(n.valor||0),0);
+  const cntProt       = ativos.filter(n=>['enviado_cartorio','protestado'].includes(calcStatus(n))).length;
+  const valEmp        = ativos.filter(n=>['emp_cobranca','enviar_juridico'].includes(calcStatus(n))).reduce((s,n)=>s+Number(n.valor||0),0);
+  const cntEmp        = ativos.filter(n=>['emp_cobranca','enviar_juridico'].includes(calcStatus(n))).length;
+  const valJur        = ativos.filter(n=>calcStatus(n)==='juridico').reduce((s,n)=>s+Number(n.valor||0),0);
+  const cntJur        = ativos.filter(n=>calcStatus(n)==='juridico').length;
+
+  const pct = v => totalVencido > 0 ? ((v/totalVencido)*100).toFixed(1)+'%' : '—';
+
+  // ── Mapa de Tratativas ──
+  const gruposTrat = {};
+  ativos.forEach(n => { const k=n.emTrativaCom||'Sem definição'; if(!gruposTrat[k]) gruposTrat[k]={val:0,cnt:0}; gruposTrat[k].val+=Number(n.valor||0); gruposTrat[k].cnt++; });
+  const tratRows = Object.entries(gruposTrat).sort((a,b)=>b[1].val-a[1].val).map(([k,v])=>`<tr><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${k}</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:700">${fmt(v.val)}</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:center">${v.cnt}</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;color:#6b7280">${pct(v.val)}</td></tr>`).join('');
+
+  // ── Devedores ──
+  const porCliente = {};
+  ativos.forEach(n => { if(!porCliente[n.cliente]) porCliente[n.cliente]={val:0,cnt:0}; porCliente[n.cliente].val+=Number(n.valor||0); porCliente[n.cliente].cnt++; });
+  const devedorRows = Object.entries(porCliente).sort((a,b)=>b[1].val-a[1].val).map(([k,v],i)=>`<tr><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-weight:600">#${i+1}</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${k}</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:700;color:#dc2626">${fmt(v.val)}</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:center">${v.cnt}</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;color:#6b7280">${pct(v.val)}</td></tr>`).join('');
+
+  // ── Vendedores ──
+  const porVendedor = {};
+  ativos.forEach(n => { const v=n.vendedor||'Sem vendedor'; if(!porVendedor[v]) porVendedor[v]={val:0,cnt:0}; porVendedor[v].val+=Number(n.valor||0); porVendedor[v].cnt++; });
+  const vendRows = Object.entries(porVendedor).sort((a,b)=>b[1].val-a[1].val).map(([k,v],i)=>`<tr><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-weight:600">#${i+1}</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${k}</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:700;color:#dc2626">${fmt(v.val)}</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:center">${v.cnt}</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;color:#6b7280">${pct(v.val)}</td></tr>`).join('');
+
+  // ── Empresas ──
+  const porEmpresa = {};
+  ativos.forEach(n => { const e=n.empresa||'Sem empresa'; if(!porEmpresa[e]) porEmpresa[e]={val:0,cnt:0}; porEmpresa[e].val+=Number(n.valor||0); porEmpresa[e].cnt++; });
+  const empRows = Object.entries(porEmpresa).sort((a,b)=>b[1].val-a[1].val).map(([k,v])=>`<tr><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${k}</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:700">${fmt(v.val)}</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:center">${v.cnt}</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;color:#6b7280">${pct(v.val)}</td></tr>`).join('');
+
+  // ── Gráficos ──
+  const hoje = new Date();
+  const grafLabels=[], grafValores=[];
+  for(let i=11;i>=0;i--){const d=new Date(hoje.getFullYear(),hoje.getMonth()-i,1);const ms=d.toISOString().slice(0,7);const mn=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];grafLabels.push(mn[d.getMonth()]+'/'+String(d.getFullYear()).slice(2));grafValores.push(ativos.filter(n=>n.vencimento?.slice(0,7)===ms).reduce((s,n)=>s+Number(n.valor||0),0));}
+  const hist = DB.historicoInadimplencia||[];
+
+  const kpiBig = (cor, label, valor, sub) => `<div style="flex:1;border:2px solid ${cor};border-radius:12px;padding:22px 26px;background:#fff"><div style="font-size:11px;font-weight:700;color:${cor};text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">${label}</div><div style="font-size:26px;font-weight:800;color:${cor};word-break:break-word">${valor}</div><div style="font-size:12px;color:#6b7280;margin-top:6px">${sub}</div></div>`;
+  const kpiSm  = (cor, label, valor, cnt, p) => `<div style="border:2px solid ${cor};border-radius:10px;padding:14px 16px;background:#fff"><div style="font-size:10px;font-weight:700;color:${cor};text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">${label}</div><div style="font-size:16px;font-weight:800;color:${cor};word-break:break-word">${valor}</div><div style="font-size:11px;color:#6b7280;margin-top:4px">${cnt} título(s)${p?' · '+p:''}</div></div>`;
 
   const html = `<!DOCTYPE html>
 <html lang="pt-BR">
 <head><meta charset="UTF-8"><title>Relatório de Indicadores — ${empresa}</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"><\/script>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Segoe UI', sans-serif; background: #dbeafe; color: #1e293b; padding: 32px; }
-  .page { max-width: 900px; margin: 0 auto; background: #fff; border-radius: 16px; padding: 40px; box-shadow: 0 4px 24px rgba(0,0,0,.1); }
-  h1 { font-size: 26px; font-weight: 800; color: #1e3a8a; margin-bottom: 4px; }
-  .sub { font-size: 13px; color: #64748b; margin-bottom: 32px; }
-  h2 { font-size: 14px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: .6px; margin: 28px 0 14px; border-bottom: 2px solid #e2e8f0; padding-bottom: 6px; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  thead th { padding: 8px 12px; background: #1e3a8a; color: #fff; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .4px; }
-  thead th:not(:first-child) { text-align: right; }
-  @media print { body { background: #fff; padding: 0; } .page { box-shadow: none; } .no-print { display: none; } }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Segoe UI',sans-serif;background:#dbeafe;color:#1e293b;padding:28px}
+  .page{max-width:960px;margin:0 auto;background:#fff;border-radius:16px;padding:36px 40px;box-shadow:0 4px 24px rgba(0,0,0,.1)}
+  h1{font-size:24px;font-weight:800;color:#1e3a8a;margin-bottom:4px}
+  .sub{font-size:13px;color:#64748b;margin-bottom:28px}
+  h2{font-size:13px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.6px;margin:24px 0 12px;border-bottom:2px solid #e2e8f0;padding-bottom:6px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  thead th{padding:8px 12px;background:#1e3a8a;color:#fff;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.4px}
+  thead th.r{text-align:right} thead th.c{text-align:center}
+  tbody tr:hover{background:#f8fafc}
+  .chart-wrap{position:relative;height:200px;margin-bottom:4px}
+  @media print{body{background:#fff;padding:0}.page{box-shadow:none}.no-print{display:none}}
 </style></head>
 <body>
 <div class="page">
-  <div class="no-print" style="text-align:right;margin-bottom:16px">
+  <div class="no-print" style="text-align:right;margin-bottom:14px">
     <button onclick="window.print()" style="padding:8px 20px;background:#1e3a8a;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">🖨️ Imprimir / Salvar PDF</button>
   </div>
   <h1>📊 Relatório de Indicadores de Cobrança</h1>
   <div class="sub">${empresa} &nbsp;·&nbsp; ${data}</div>
 
-  <h2>Indicadores Gerais</h2>
-  <div style="display:flex;gap:12px;margin-bottom:10px">
-    ${kpiCard('#dc2626','Total Vencido',fmt(totalVencido),ativos.length+' título(s)',null)}
-    ${kpiCard('#16a34a','Total Pago (mês)',fmt(totalPago),pagos.length+' título(s)',null)}
-  </div>
-  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px">
-    ${kpiCard('#1e3a8a','Taxa de Inadimplência',taxaInadimplencia,'sobre carteira total',null)}
-    ${kpiCard('#0369a1','Ticket Médio Vencido',fmt(ticketMedio),'por título',null)}
-    ${kpiCard('#78350f','Prazo Médio de Atraso',diasMedioAtraso+' dias','média dos títulos vencidos',null)}
-  </div>
-  <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px">
-    ${kpiCard('#c2410c','Cob. Avançada',fmt(valCobAv),cntCobAv+' título(s)',pct(valCobAv))}
-    ${kpiCard('#d97706','Aguard. Cartório',fmt(valAguardCart),cntAguardCart+' título(s)',pct(valAguardCart))}
-    ${kpiCard('#7c3aed','Protestado',fmt(valProt),cntProt+' título(s)',pct(valProt))}
-    ${kpiCard('#0e7490','Emp. Cobrança',fmt(valEmp),cntEmp+' título(s)',pct(valEmp))}
-    ${kpiCard('#7f1d1d','Jurídico',fmt(valJur),cntJur+' título(s)',pct(valJur))}
+  <!-- LINHA 1: Total Vencido + Total Pago -->
+  <h2>Posição da Carteira</h2>
+  <div style="display:flex;gap:14px;margin-bottom:14px">
+    ${kpiBig('#dc2626','Total em Aberto (Vencido)',fmt(totalVencido),ativos.length+' título(s) em aberto')}
+    ${kpiBig('#16a34a','Total Pago no Período',fmt(totalPago),pagos.length+' título(s) liquidados')}
   </div>
 
+  <!-- LINHA 2: Status de Cobrança -->
+  <h2>Status de Cobrança</h2>
+  <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:14px">
+    ${kpiSm('#c2410c','Cob. Avançada',fmt(valCobAv),cntCobAv,pct(valCobAv))}
+    ${kpiSm('#d97706','Aguard. Cartório',fmt(valAguardCart),cntAguardCart,pct(valAguardCart))}
+    ${kpiSm('#7c3aed','Protestado',fmt(valProt),cntProt,pct(valProt))}
+    ${kpiSm('#0e7490','Emp. Cobrança',fmt(valEmp),cntEmp,pct(valEmp))}
+    ${kpiSm('#7f1d1d','Jurídico',fmt(valJur),cntJur,pct(valJur))}
+  </div>
+
+  <!-- LINHA 3: Taxa de Inadimplência + Prazo Médio -->
+  <h2>Indicadores de Eficiência</h2>
+  <div style="display:flex;gap:14px;margin-bottom:14px">
+    <div style="flex:1;border:2px solid #1e3a8a;border-radius:12px;padding:22px 26px;background:#eff6ff">
+      <div style="font-size:11px;font-weight:700;color:#1e3a8a;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Taxa de Inadimplência (sobre carteira total)</div>
+      <div style="font-size:42px;font-weight:900;color:#1e3a8a">${taxaInadimp}%</div>
+      <div style="font-size:12px;color:#3b82f6;margin-top:6px">Carteira total: ${fmt(totalCarteira)} &nbsp;|&nbsp; Verde ≤ 2% &nbsp;·&nbsp; Laranja 2–5% &nbsp;·&nbsp; Vermelho > 5%</div>
+    </div>
+    <div style="flex:1;border:2px solid #78350f;border-radius:12px;padding:22px 26px;background:#fef3c7">
+      <div style="font-size:11px;font-weight:700;color:#78350f;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Prazo Médio de Atraso</div>
+      <div style="font-size:42px;font-weight:900;color:#78350f">${diasMedioArr} dias</div>
+      <div style="font-size:12px;color:#92400e;margin-top:6px">Média aritmética dos ${ativos.length} título(s) em aberto</div>
+    </div>
+  </div>
+
+  <!-- LINHA 4: Gráfico dinâmico mensal -->
+  <h2>📈 Tendência de Inadimplência — Últimos 12 Meses (Dinâmico)</h2>
+  <div class="chart-wrap"><canvas id="grafMensal"></canvas></div>
+  <p style="font-size:11px;color:#94a3b8;margin-bottom:4px">Vencimentos em aberto por mês de vencimento (posição atual)</p>
+
+  <!-- LINHA 5: Gráfico histórico estático -->
+  <h2>📊 Histórico de Inadimplência Mensal — Fechamentos</h2>
+  ${hist.length>0
+    ? `<div class="chart-wrap"><canvas id="grafHistorico"></canvas></div><p style="font-size:11px;color:#94a3b8;margin-bottom:4px">Taxa (%) registrada no fechamento de cada mês</p>`
+    : `<p style="font-size:13px;color:#94a3b8;padding:16px 0;text-align:center">Nenhum mês fechado ainda. Use "📌 Fechar Mês" no Dashboard.</p>`}
+
+  <!-- LINHA 6: Mapa de Tratativas -->
   <h2>Mapa de Tratativas</h2>
-  <table>
-    <thead><tr><th>Área</th><th style="text-align:right">Valor</th><th style="text-align:center">Títulos</th><th style="text-align:right">% Inadimpl.</th></tr></thead>
-    <tbody>${tratRows||'<tr><td colspan="4" style="padding:12px;text-align:center;color:#6b7280">Nenhuma tratativa registrada.</td></tr>'}</tbody>
-  </table>
+  <table><thead><tr><th>Área</th><th class="r">Valor</th><th class="c">Títulos</th><th class="r">% Inadimpl.</th></tr></thead>
+  <tbody>${tratRows||'<tr><td colspan="4" style="padding:12px;text-align:center;color:#6b7280">Nenhuma tratativa registrada.</td></tr>'}</tbody></table>
 
-  <h2>Todos os Devedores (${Object.keys(porCliente).length} clientes)</h2>
-  <table>
-    <thead><tr><th>#</th><th>Cliente</th><th style="text-align:right">Valor Total</th><th style="text-align:center">Títulos</th><th style="text-align:right">% Inadimpl.</th></tr></thead>
-    <tbody>${top10||'<tr><td colspan="5" style="padding:12px;text-align:center;color:#6b7280">Sem dados.</td></tr>'}</tbody>
-  </table>
+  <!-- LINHA 7: Principais Devedores -->
+  <h2>Principais Devedores — ${Object.keys(porCliente).length} cliente(s)</h2>
+  <table><thead><tr><th>#</th><th>Cliente</th><th class="r">Valor Total</th><th class="c">Títulos</th><th class="r">% Total</th></tr></thead>
+  <tbody>${devedorRows||'<tr><td colspan="5" style="padding:12px;text-align:center;color:#6b7280">Sem dados.</td></tr>'}</tbody></table>
 
-  <h2>Por Vendedor (${Object.keys(porVendedor).length} vendedores)</h2>
-  <table>
-    <thead><tr><th>#</th><th>Vendedor</th><th style="text-align:right">Valor Total</th><th style="text-align:center">Títulos</th><th style="text-align:right">% Inadimpl.</th></tr></thead>
-    <tbody>${vendRows||'<tr><td colspan="5" style="padding:12px;text-align:center;color:#6b7280">Sem dados.</td></tr>'}</tbody>
-  </table>
+  <!-- LINHA 8: Por Vendedor -->
+  <h2>Por Vendedor — ${Object.keys(porVendedor).length} vendedor(es)</h2>
+  <table><thead><tr><th>#</th><th>Vendedor</th><th class="r">Valor Total</th><th class="c">Títulos</th><th class="r">% Total</th></tr></thead>
+  <tbody>${vendRows||'<tr><td colspan="5" style="padding:12px;text-align:center;color:#6b7280">Sem dados.</td></tr>'}</tbody></table>
 
-  <h2>Por Empresa (${Object.keys(porEmpresa).length} empresas)</h2>
-  <table>
-    <thead><tr><th>Empresa</th><th style="text-align:right">Valor Total</th><th style="text-align:center">Títulos</th><th style="text-align:right">% Inadimpl.</th></tr></thead>
-    <tbody>${empRows||'<tr><td colspan="4" style="padding:12px;text-align:center;color:#6b7280">Sem dados.</td></tr>'}</tbody>
-  </table>
+  <!-- LINHA 9: Por Empresa -->
+  <h2>Por Empresa — ${Object.keys(porEmpresa).length} empresa(s)</h2>
+  <table><thead><tr><th>Empresa</th><th class="r">Valor Total</th><th class="c">Títulos</th><th class="r">% Total</th></tr></thead>
+  <tbody>${empRows||'<tr><td colspan="4" style="padding:12px;text-align:center;color:#6b7280">Sem dados.</td></tr>'}</tbody></table>
 
-  <div style="margin-top:32px;padding-top:16px;border-top:1px solid #e2e8f0;font-size:11px;color:#94a3b8;text-align:center">
+  <div style="margin-top:28px;padding-top:14px;border-top:1px solid #e2e8f0;font-size:11px;color:#94a3b8;text-align:center">
     Gerado em ${new Date().toLocaleString('pt-BR')} · Sistema de Cobrança ${empresa}
   </div>
 </div>
+<script>
+(function(){
+  const labels=${JSON.stringify(grafLabels)};
+  const valores=${JSON.stringify(grafValores)};
+  const ctx1=document.getElementById('grafMensal');
+  if(ctx1){new Chart(ctx1.getContext('2d'),{type:'bar',data:{labels,datasets:[{label:'Vencido em Aberto (R$)',data:valores,backgroundColor:valores.map(v=>v>0?'rgba(220,38,38,.7)':'rgba(148,163,184,.4)'),borderColor:valores.map(v=>v>0?'#dc2626':'#94a3b8'),borderWidth:1.5,borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>' R$ '+c.raw.toLocaleString('pt-BR',{minimumFractionDigits:2})}}},scales:{y:{ticks:{callback:v=>'R$'+v.toLocaleString('pt-BR',{notation:'compact',compactDisplay:'short'})},grid:{color:'#e2e8f0'}},x:{grid:{display:false}}}}});}
+
+  const hist=${JSON.stringify(hist)};
+  const ctx2=document.getElementById('grafHistorico');
+  if(ctx2&&hist.length){new Chart(ctx2.getContext('2d'),{type:'line',data:{labels:hist.map(h=>h.label),datasets:[{label:'Taxa de Inadimplência (%)',data:hist.map(h=>h.taxa),borderColor:'#1e3a8a',backgroundColor:'rgba(30,58,138,.08)',fill:true,tension:.35,pointBackgroundColor:hist.map(h=>h.taxa>5?'#dc2626':h.taxa>2?'#d97706':'#16a34a'),pointRadius:6,pointHoverRadius:8,borderWidth:2.5}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>' '+c.raw.toFixed(1)+'% de inadimplência'}}},scales:{y:{ticks:{callback:v=>v+'%'},grid:{color:'#e2e8f0'},min:0},x:{grid:{display:false}}}}});}
+})();
+<\/script>
 </body></html>`;
 
   const blob = new Blob([html], {type:'text/html;charset=utf-8'});
