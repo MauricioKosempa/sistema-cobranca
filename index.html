@@ -4902,7 +4902,160 @@ function renderParametros(){
           <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px">${isTodas?'<span style="color:#0369a1;font-weight:600">Visão consolidada (somente leitura)</span>':'Editando: <b>'+fatAtiva+'</b>'}</div>
           ${anosHtml}`;
       })()}
+    </div>
+
+    <div class="card">
+      <div class="card-title">👥 Perfis de Acesso</div>
+      <p style="font-size:13px;color:var(--text-muted);margin-bottom:20px">
+        Gerencie quem pode acessar o sistema e com qual nível de permissão. Ao salvar, novos usuários recebem um convite por e-mail.
+      </p>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px">
+
+        <!-- Admin -->
+        <div style="border:2px solid #7c3aed;border-radius:10px;overflow:hidden">
+          <div style="background:#7c3aed;padding:12px 16px">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="font-size:18px">🔑</span>
+              <div>
+                <div style="font-size:14px;font-weight:700;color:#fff">Admin</div>
+                <div style="font-size:11px;color:#e9d5ff">Acesso total ao sistema</div>
+              </div>
+            </div>
+          </div>
+          <div style="padding:14px 16px;background:#faf5ff">
+            <div style="font-size:11px;color:#6b21a8;background:#ede9fe;border-radius:6px;padding:8px 10px;margin-bottom:12px;line-height:1.5">
+              ✅ Configurações &nbsp;✅ Parâmetros &nbsp;✅ Importar &nbsp;✅ Templates<br>✅ Editar/excluir títulos &nbsp;✅ Tudo mais
+            </div>
+            <div style="font-size:11px;color:#64748b;margin-bottom:10px">
+              <b>mauricio@reconlog.com.br</b> — Super Admin permanente (não pode ser removido)
+            </div>
+            <div id="perfil-admin-list">
+              ${(DB.config.usuariosAdmin||[]).map((e,i)=>`
+                <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px" data-perfil="admin" data-idx="${i}">
+                  <input type="email" class="perfil-email-input" data-perfil="admin" value="${e}" placeholder="email@empresa.com" style="flex:1;border:1px solid #c4b5fd;border-radius:6px;padding:7px 10px;font-size:13px;background:#fff">
+                  <button type="button" onclick="removerEmailPerfil(this,'admin')" style="background:none;border:none;cursor:pointer;color:#ef4444;font-size:18px;line-height:1;padding:0 4px">✕</button>
+                </div>`).join('')}
+            </div>
+            <button type="button" class="btn btn-ghost btn-sm" onclick="adicionarEmailPerfil('admin')" style="margin-top:4px;color:#7c3aed">+ Adicionar Admin</button>
+          </div>
+        </div>
+
+        <!-- Gestor -->
+        <div style="border:2px solid #0284c7;border-radius:10px;overflow:hidden">
+          <div style="background:#0284c7;padding:12px 16px">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="font-size:18px">👔</span>
+              <div>
+                <div style="font-size:14px;font-weight:700;color:#fff">Gestor</div>
+                <div style="font-size:11px;color:#bae6fd">Operação completa, sem configurar</div>
+              </div>
+            </div>
+          </div>
+          <div style="padding:14px 16px;background:#f0f9ff">
+            <div style="font-size:11px;color:#075985;background:#e0f2fe;border-radius:6px;padding:8px 10px;margin-bottom:12px;line-height:1.5">
+              ✅ Importar &nbsp;✅ Templates &nbsp;✅ Editar/excluir títulos<br>❌ Configurações &nbsp;❌ Parâmetros
+            </div>
+            <div id="perfil-gestor-list">
+              ${(DB.config.usuariosGestores||[]).map((e,i)=>`
+                <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px" data-perfil="gestor" data-idx="${i}">
+                  <input type="email" class="perfil-email-input" data-perfil="gestor" value="${e}" placeholder="email@empresa.com" style="flex:1;border:1px solid #7dd3fc;border-radius:6px;padding:7px 10px;font-size:13px;background:#fff">
+                  <button type="button" onclick="removerEmailPerfil(this,'gestor')" style="background:none;border:none;cursor:pointer;color:#ef4444;font-size:18px;line-height:1;padding:0 4px">✕</button>
+                </div>`).join('')}
+            </div>
+            <button type="button" class="btn btn-ghost btn-sm" onclick="adicionarEmailPerfil('gestor')" style="margin-top:4px;color:#0284c7">+ Adicionar Gestor</button>
+          </div>
+        </div>
+
+        <!-- Consulta -->
+        <div style="border:2px solid #64748b;border-radius:10px;overflow:hidden">
+          <div style="background:#64748b;padding:12px 16px">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="font-size:18px">👁️</span>
+              <div>
+                <div style="font-size:14px;font-weight:700;color:#fff">Consulta</div>
+                <div style="font-size:11px;color:#e2e8f0">Somente leitura</div>
+              </div>
+            </div>
+          </div>
+          <div style="padding:14px 16px;background:#f8fafc">
+            <div style="font-size:11px;color:#334155;background:#f1f5f9;border-radius:6px;padding:8px 10px;margin-bottom:12px;line-height:1.5">
+              ✅ Visualizar títulos &nbsp;✅ Gerar relatórios &nbsp;✅ Exportar Excel<br>❌ Editar qualquer dado &nbsp;❌ Importar &nbsp;❌ Templates &nbsp;❌ Config
+            </div>
+            <div id="perfil-consulta-list">
+              ${(DB.config.usuariosConsulta||[]).map((e,i)=>`
+                <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px" data-perfil="consulta" data-idx="${i}">
+                  <input type="email" class="perfil-email-input" data-perfil="consulta" value="${e}" placeholder="email@empresa.com" style="flex:1;border:1px solid #cbd5e1;border-radius:6px;padding:7px 10px;font-size:13px;background:#fff">
+                  <button type="button" onclick="removerEmailPerfil(this,'consulta')" style="background:none;border:none;cursor:pointer;color:#ef4444;font-size:18px;line-height:1;padding:0 4px">✕</button>
+                </div>`).join('')}
+            </div>
+            <button type="button" class="btn btn-ghost btn-sm" onclick="adicionarEmailPerfil('consulta')" style="margin-top:4px;color:#64748b">+ Adicionar Consulta</button>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="form-actions" style="margin-top:20px">
+        <button class="btn btn-primary" onclick="salvarPerfisAcesso()">💾 Salvar e Enviar Convites</button>
+        <span id="perfis-status" style="font-size:12px;color:var(--text-muted)"></span>
+      </div>
     </div>`;
+}
+
+function adicionarEmailPerfil(tipo) {
+  const listId = `perfil-${tipo}-list`;
+  const cor = tipo==='admin'?'#c4b5fd':tipo==='gestor'?'#7dd3fc':'#cbd5e1';
+  const div = document.createElement('div');
+  div.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:8px';
+  div.innerHTML = `
+    <input type="email" class="perfil-email-input" data-perfil="${tipo}" placeholder="email@empresa.com"
+      style="flex:1;border:1px solid ${cor};border-radius:6px;padding:7px 10px;font-size:13px;background:#fff">
+    <button type="button" onclick="removerEmailPerfil(this,'${tipo}')" style="background:none;border:none;cursor:pointer;color:#ef4444;font-size:18px;line-height:1;padding:0 4px">✕</button>`;
+  document.getElementById(listId).appendChild(div);
+  div.querySelector('input').focus();
+}
+
+function removerEmailPerfil(btn, tipo) {
+  btn.parentElement.remove();
+}
+
+async function salvarPerfisAcesso() {
+  const coletarEmails = (tipo) =>
+    [...document.querySelectorAll(`#perfil-${tipo}-list .perfil-email-input`)]
+      .map(i => i.value.trim().toLowerCase()).filter(Boolean);
+
+  const admins  = coletarEmails('admin');
+  const gestores = coletarEmails('gestor');
+  const consulta = coletarEmails('consulta');
+
+  const antigosAdmins  = DB.config.usuariosAdmin    || [];
+  const antigosGest    = DB.config.usuariosGestores || [];
+  const antigosConsulta = DB.config.usuariosConsulta || [];
+
+  DB.config.usuariosAdmin    = admins;
+  DB.config.usuariosGestores = gestores;
+  DB.config.usuariosConsulta = consulta;
+  saveDB();
+
+  const novosAdmins  = admins.filter(e => !antigosAdmins.includes(e));
+  const novosGest    = gestores.filter(e => !antigosGest.includes(e));
+  const novosConsulta = consulta.filter(e => !antigosConsulta.includes(e));
+  const todos = [
+    ...novosAdmins.map(e  => ({ e, r:'Admin' })),
+    ...novosGest.map(e    => ({ e, r:'Gestor' })),
+    ...novosConsulta.map(e => ({ e, r:'Consulta' }))
+  ];
+
+  const st = document.getElementById('perfis-status');
+  if (todos.length > 0) {
+    if (st) st.textContent = '📨 Enviando convites...';
+    await enviarConvites(todos);
+    if (st) st.textContent = '✅ Perfis salvos e convites enviados!';
+  } else {
+    if (st) st.textContent = '✅ Perfis de acesso salvos!';
+    setTimeout(() => { if (st) st.textContent = ''; }, 3000);
+  }
+  renderParametros();
 }
 
 function salvarRegras(){
