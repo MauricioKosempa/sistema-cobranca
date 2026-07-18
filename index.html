@@ -3298,37 +3298,52 @@ function baixarPlanilhaClientes() {
 }
 
 function baixarPlanilhaRecebimentos() {
-  const empresas = (DB.empresas && DB.empresas.length) ? DB.empresas
+  const empresas   = (DB.empresas && DB.empresas.length) ? DB.empresas
     : ['Reconlog','Reconlog Rental','RL Estruturas','RL Montagens','RL Brasil'];
   const vendedores = (DB.vendedores||[]).map(v=>v.nome||v).filter(Boolean);
   const statusOpts = ['Automático',...Object.values(STATUS_LABELS)];
   const trataOpts  = TRATATIVAS_AREAS.map(a=>a.key);
 
+  // ── Aba principal ──────────────────────────────────────────────
   const headers = ['Nº NF','Cliente','Vencimento','Valor da Nota','Empresa','Status','Em Tratativa','Vendedor'];
   const exemplo = ['NF-00001','Nome do Cliente','2026-01-31',15000,
     empresas[0],'Automático','',vendedores[0]||'Vendedor Exemplo'];
-
-  const ws = XLSX.utils.aoa_to_sheet([headers,exemplo]);
+  const ws = XLSX.utils.aoa_to_sheet([headers, exemplo]);
   ws['!cols'] = [{wch:12},{wch:25},{wch:14},{wch:16},{wch:22},{wch:22},{wch:22},{wch:22}];
 
-  const mkDV = (sqref,opts) => ({
+  // ── Aba oculta com listas (evita limite de 255 chars do Excel) ─
+  // Coluna A=Empresa, B=Status, C=Tratativa, D=Vendedor
+  const maxR = Math.max(empresas.length, statusOpts.length, trataOpts.length, vendedores.length);
+  const listasData = Array.from({length:maxR}, (_,i) => [
+    empresas[i]   || '',
+    statusOpts[i] || '',
+    trataOpts[i]  || '',
+    vendedores[i] || ''
+  ]);
+  const wsL = XLSX.utils.aoa_to_sheet(listasData);
+
+  // ── Validações por range na aba Listas ────────────────────────
+  const mkDV = (sqref, col, rows) => ({
     type:'list', sqref,
-    formula1:`"${opts.join(',')}"`,
+    formula1:`Listas!$${col}$1:$${col}$${rows}`,
     allow_blank:true, showDropDown:false,
     showErrorMessage:true,
     errorTitle:'Valor inválido',
     error:'Selecione um valor da lista suspensa.'
   });
-
   ws['!datavalidations'] = [
-    mkDV('E2:E1000', empresas),
-    mkDV('F2:F1000', statusOpts),
-    mkDV('G2:G1000', trataOpts),
-    ...(vendedores.length ? [mkDV('H2:H1000', vendedores)] : [])
+    mkDV('E2:E1000', 'A', empresas.length),
+    mkDV('F2:F1000', 'B', statusOpts.length),
+    mkDV('G2:G1000', 'C', trataOpts.length),
+    ...(vendedores.length ? [mkDV('H2:H1000', 'D', vendedores.length)] : [])
   ];
 
+  // ── Monta workbook e oculta aba Listas ────────────────────────
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Recebimentos');
+  XLSX.utils.book_append_sheet(wb, ws,  'Recebimentos');
+  XLSX.utils.book_append_sheet(wb, wsL, 'Listas');
+  wb.Workbook = { Sheets: [{},{Hidden:1}] };   // oculta aba Listas
+
   XLSX.writeFile(wb, 'Modelo_Importacao_Recebimentos.xlsx');
 }
 
