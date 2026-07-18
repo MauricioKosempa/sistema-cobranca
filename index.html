@@ -2002,8 +2002,15 @@ function initDashboardCharts() {
 
 function fecharMesInadimplencia() {
   const mesAtual = new Date().toISOString().slice(0,7);
+  const meses=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  const [anoP, mesP] = mesAtual.split('-');
+  const labelP = `${meses[parseInt(mesP)-1]}/${anoP}`;
   const jaFechado = (DB.historicoInadimplencia||[]).find(h=>h.mes===mesAtual);
-  if (jaFechado && !confirm(`Mês ${jaFechado.label} já foi fechado. Sobrescrever?`)) return;
+  if (jaFechado) {
+    if (!confirm(`⚠️ O mês ${labelP} já foi fechado.\n\nDeseja sobrescrever o registro existente?`)) return;
+  } else {
+    if (!confirm(`📌 Fechar o mês ${labelP}?\n\nIsso vai registrar a taxa de inadimplência atual para ${labelP} no histórico.`)) return;
+  }
   if (jaFechado) DB.historicoInadimplencia = DB.historicoInadimplencia.filter(h=>h.mes!==mesAtual);
 
   const ativos = (DB.notas||[]).filter(n=>!['pago','perdido','reprogramado'].includes(calcStatus(n))&&diasAtraso(n.vencimento)>0);
@@ -2011,9 +2018,8 @@ function fecharMesInadimplencia() {
   const totalVencido   = ativos.reduce((s,n)=>s+Number(n.valor||0),0);
   const totalCarteira  = totalVencido + pagos.reduce((s,n)=>s+Number(n.valor||0),0);
   const taxa = totalCarteira>0 ? parseFloat(((totalVencido/totalCarteira)*100).toFixed(2)) : 0;
-  const meses=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
   const [ano, mes] = mesAtual.split('-');
-  const label = `${meses[parseInt(mes)-1]}/${ano}`;
+  const label = labelP;
   if (!DB.historicoInadimplencia) DB.historicoInadimplencia = [];
   DB.historicoInadimplencia.push({mes:mesAtual, label, totalVencido, totalCarteira, taxa, qtdTitulos:ativos.length, fechadoEm:new Date().toISOString()});
   DB.historicoInadimplencia.sort((a,b)=>a.mes.localeCompare(b.mes));
