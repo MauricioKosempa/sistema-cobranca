@@ -2359,11 +2359,17 @@ function gerarRelatorioIndicadores() {
       <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;color:#6b7280">${pct(v.val)}</td>
     </tr>`).join('');
 
-  const kpiCard = (cor, label, valor, cnt, pctVal) => `
-    <div style="border:2px solid ${cor};border-radius:10px;padding:16px 18px;background:#fff;min-width:130px;flex:1">
+  const totalCarteira = totalVencido + totalPago;
+  const taxaInadimplencia = totalCarteira > 0 ? ((totalVencido / totalCarteira) * 100).toFixed(1) + '%' : '—';
+  const ticketMedio = ativos.length > 0 ? totalVencido / ativos.length : 0;
+  const diasMedioAtraso = ativos.length > 0
+    ? Math.round(ativos.reduce((s,n)=>s+diasAtraso(n.vencimento),0) / ativos.length) : 0;
+
+  const kpiCard = (cor, label, valor, sub1, sub2) => `
+    <div style="border:2px solid ${cor};border-radius:10px;padding:14px 16px;background:#fff">
       <div style="font-size:10px;font-weight:700;color:${cor};text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">${label}</div>
-      <div style="font-size:22px;font-weight:800;color:${cor}">${fmt(valor)}</div>
-      ${cnt!==null ? `<div style="font-size:11px;color:#6b7280;margin-top:4px">${cnt} título(s)${pctVal?' · '+pctVal:''}</div>` : ''}
+      <div style="font-size:18px;font-weight:800;color:${cor};word-break:break-word;line-height:1.2">${valor}</div>
+      ${sub1 ? `<div style="font-size:11px;color:#6b7280;margin-top:5px">${sub1}${sub2?' &nbsp;·&nbsp; '+sub2:''}</div>` : ''}
     </div>`;
 
   const html = `<!DOCTYPE html>
@@ -2390,16 +2396,21 @@ function gerarRelatorioIndicadores() {
   <div class="sub">${empresa} &nbsp;·&nbsp; ${data}</div>
 
   <h2>Indicadores Gerais</h2>
-  <div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:8px">
-    ${kpiCard('#dc2626','Total Vencido',totalVencido,ativos.length,null)}
-    ${kpiCard('#16a34a','Total Pago',totalPago,pagos.length,null)}
+  <div style="display:flex;gap:12px;margin-bottom:10px">
+    ${kpiCard('#dc2626','Total Vencido',fmt(totalVencido),ativos.length+' título(s)',null)}
+    ${kpiCard('#16a34a','Total Pago (mês)',fmt(totalPago),pagos.length+' título(s)',null)}
   </div>
-  <div style="display:flex;flex-wrap:wrap;gap:12px">
-    ${kpiCard('#c2410c','Cob. Avançada',valCobAv,cntCobAv,pct(valCobAv))}
-    ${kpiCard('#d97706','Aguard. Cartório',valAguardCart,cntAguardCart,pct(valAguardCart))}
-    ${kpiCard('#7c3aed','Protestado',valProt,cntProt,pct(valProt))}
-    ${kpiCard('#0e7490','Emp. Cobrança',valEmp,cntEmp,pct(valEmp))}
-    ${kpiCard('#7f1d1d','Jurídico',valJur,cntJur,pct(valJur))}
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px">
+    ${kpiCard('#1e3a8a','Taxa de Inadimplência',taxaInadimplencia,'sobre carteira total',null)}
+    ${kpiCard('#0369a1','Ticket Médio Vencido',fmt(ticketMedio),'por título',null)}
+    ${kpiCard('#78350f','Prazo Médio de Atraso',diasMedioAtraso+' dias','média dos títulos vencidos',null)}
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px">
+    ${kpiCard('#c2410c','Cob. Avançada',fmt(valCobAv),cntCobAv+' título(s)',pct(valCobAv))}
+    ${kpiCard('#d97706','Aguard. Cartório',fmt(valAguardCart),cntAguardCart+' título(s)',pct(valAguardCart))}
+    ${kpiCard('#7c3aed','Protestado',fmt(valProt),cntProt+' título(s)',pct(valProt))}
+    ${kpiCard('#0e7490','Emp. Cobrança',fmt(valEmp),cntEmp+' título(s)',pct(valEmp))}
+    ${kpiCard('#7f1d1d','Jurídico',fmt(valJur),cntJur+' título(s)',pct(valJur))}
   </div>
 
   <h2>Mapa de Tratativas</h2>
