@@ -2317,11 +2317,44 @@ function gerarRelatorioIndicadores() {
     porCliente[n.cliente].val += Number(n.valor||0);
     porCliente[n.cliente].cnt++;
   });
-  const top10 = Object.entries(porCliente).sort((a,b)=>b[1].val-a[1].val).slice(0,10).map(([k,v],i)=>`
+  const top10 = Object.entries(porCliente).sort((a,b)=>b[1].val-a[1].val).map(([k,v],i)=>`
     <tr>
       <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-weight:600">#${i+1}</td>
       <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${k}</td>
       <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:700;color:#dc2626">${fmt(v.val)}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:center">${v.cnt}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;color:#6b7280">${pct(v.val)}</td>
+    </tr>`).join('');
+
+  // Por vendedor
+  const porVendedor = {};
+  ativos.forEach(n => {
+    const v = n.vendedor || 'Sem vendedor';
+    if(!porVendedor[v]) porVendedor[v] = {val:0,cnt:0};
+    porVendedor[v].val += Number(n.valor||0);
+    porVendedor[v].cnt++;
+  });
+  const vendRows = Object.entries(porVendedor).sort((a,b)=>b[1].val-a[1].val).map(([k,v],i)=>`
+    <tr>
+      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-weight:600">#${i+1}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${k}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:700;color:#dc2626">${fmt(v.val)}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:center">${v.cnt}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;color:#6b7280">${pct(v.val)}</td>
+    </tr>`).join('');
+
+  // Por empresa
+  const porEmpresa = {};
+  ativos.forEach(n => {
+    const e = n.empresa || 'Sem empresa';
+    if(!porEmpresa[e]) porEmpresa[e] = {val:0,cnt:0};
+    porEmpresa[e].val += Number(n.valor||0);
+    porEmpresa[e].cnt++;
+  });
+  const empRows = Object.entries(porEmpresa).sort((a,b)=>b[1].val-a[1].val).map(([k,v])=>`
+    <tr>
+      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${k}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:700">${fmt(v.val)}</td>
       <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:center">${v.cnt}</td>
       <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;color:#6b7280">${pct(v.val)}</td>
     </tr>`).join('');
@@ -2375,10 +2408,22 @@ function gerarRelatorioIndicadores() {
     <tbody>${tratRows||'<tr><td colspan="4" style="padding:12px;text-align:center;color:#6b7280">Nenhuma tratativa registrada.</td></tr>'}</tbody>
   </table>
 
-  <h2>Top 10 Maiores Devedores</h2>
+  <h2>Todos os Devedores (${Object.keys(porCliente).length} clientes)</h2>
   <table>
     <thead><tr><th>#</th><th>Cliente</th><th style="text-align:right">Valor Total</th><th style="text-align:center">Títulos</th><th style="text-align:right">% Inadimpl.</th></tr></thead>
     <tbody>${top10||'<tr><td colspan="5" style="padding:12px;text-align:center;color:#6b7280">Sem dados.</td></tr>'}</tbody>
+  </table>
+
+  <h2>Por Vendedor (${Object.keys(porVendedor).length} vendedores)</h2>
+  <table>
+    <thead><tr><th>#</th><th>Vendedor</th><th style="text-align:right">Valor Total</th><th style="text-align:center">Títulos</th><th style="text-align:right">% Inadimpl.</th></tr></thead>
+    <tbody>${vendRows||'<tr><td colspan="5" style="padding:12px;text-align:center;color:#6b7280">Sem dados.</td></tr>'}</tbody>
+  </table>
+
+  <h2>Por Empresa (${Object.keys(porEmpresa).length} empresas)</h2>
+  <table>
+    <thead><tr><th>Empresa</th><th style="text-align:right">Valor Total</th><th style="text-align:center">Títulos</th><th style="text-align:right">% Inadimpl.</th></tr></thead>
+    <tbody>${empRows||'<tr><td colspan="4" style="padding:12px;text-align:center;color:#6b7280">Sem dados.</td></tr>'}</tbody>
   </table>
 
   <div style="margin-top:32px;padding-top:16px;border-top:1px solid #e2e8f0;font-size:11px;color:#94a3b8;text-align:center">
