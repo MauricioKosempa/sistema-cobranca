@@ -5159,43 +5159,47 @@ function renderParametros(){
     <div class="card">
       <div class="card-title">🛡️ Permissões por Perfil</div>
       <p style="font-size:13px;color:var(--text-muted);margin-bottom:20px">
-        Defina o que cada perfil pode fazer. <b>Admin</b> sempre tem acesso total. <b>Ocultar</b> remove o item do menu; <b>Consultar</b> permite visualizar sem alterar; <b>Modificar</b> dá acesso completo.
+        Defina o que cada perfil pode fazer. <b>Admin</b> sempre tem acesso total.<br>
+        <b>Páginas:</b> Modificar = acesso completo · Consultar = somente leitura · Ocultar = não aparece no menu.<br>
+        <b>Ações:</b> Permitir = botão visível e funcional · Ocultar = botão escondido.
       </p>
       ${['gestor','consulta'].map(perfil => {
         const label = perfil === 'gestor' ? '👔 Login Gestor' : '👁️ Login Consulta';
         const cor = perfil === 'gestor' ? '#0284c7' : '#64748b';
         const perms = DB.config.permissoes?.[perfil] || PERM_DEFAULTS[perfil];
-        const features = [
-          { key:'vencidos',        label:'Recebimentos Vencidos' },
-          { key:'crm',             label:'CRM – Tratativas' },
-          { key:'vendedores',      label:'Cadastro de Vendedores' },
-          { key:'clientes',        label:'Cadastro de Clientes' },
-          { key:'importar',        label:'Importar Planilha' },
-          { key:'parametros',      label:'Parâmetros' },
-          { key:'templates',       label:'Templates de Mensagem' },
-          { key:'configuracoes',   label:'Configurações' },
-          { key:'gerarRelatorio',  label:'Gerar Relatório' },
-          { key:'exportarPlanilha',label:'Exportar Planilha' },
-          { key:'enviarEmail',     label:'Enviar Relatório E-mail' },
-          { key:'enviarWhatsapp',  label:'Enviar Relatório WhatsApp' },
+        const pageFeats = [
+          { key:'vencidos',      label:'Recebimentos Vencidos' },
+          { key:'crm',           label:'CRM – Tratativas' },
+          { key:'vendedores',    label:'Cadastro de Vendedores' },
+          { key:'clientes',      label:'Cadastro de Clientes' },
+          { key:'importar',      label:'Importar Planilha' },
+          { key:'parametros',    label:'Parâmetros' },
+          { key:'templates',     label:'Templates de Mensagem' },
+          { key:'configuracoes', label:'Configurações' },
+        ];
+        const actionFeats = [
+          { key:'gerarRelatorio',   label:'Gerar Relatório' },
+          { key:'exportarPlanilha', label:'Exportar Planilha' },
+          { key:'enviarEmail',      label:'Enviar Relatório E-mail' },
+          { key:'enviarWhatsapp',   label:'Enviar Relatório WhatsApp' },
         ];
         return `
-        <div style="margin-bottom:28px">
-          <div style="font-size:14px;font-weight:700;color:${cor};margin-bottom:12px;display:flex;align-items:center;gap:8px">
-            ${label}
-          </div>
-          <div style="overflow-x:auto">
+        <div style="margin-bottom:32px">
+          <div style="font-size:14px;font-weight:700;color:${cor};margin-bottom:14px">${label}</div>
+
+          <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">📄 Páginas e Módulos</div>
+          <div style="overflow-x:auto;margin-bottom:16px">
             <table style="width:100%;border-collapse:collapse;font-size:13px">
               <thead>
                 <tr style="background:#f8fafc">
-                  <th style="text-align:left;padding:8px 12px;border-bottom:2px solid var(--border);color:var(--text-muted);font-size:11.5px;text-transform:uppercase;letter-spacing:.4px;font-weight:600;width:55%">Funcionalidade</th>
-                  <th style="text-align:center;padding:8px 12px;border-bottom:2px solid var(--border);color:#16a34a;font-size:11.5px;text-transform:uppercase;letter-spacing:.4px;font-weight:600">Modificar</th>
-                  <th style="text-align:center;padding:8px 12px;border-bottom:2px solid var(--border);color:#0284c7;font-size:11.5px;text-transform:uppercase;letter-spacing:.4px;font-weight:600">Consultar</th>
-                  <th style="text-align:center;padding:8px 12px;border-bottom:2px solid var(--border);color:#dc2626;font-size:11.5px;text-transform:uppercase;letter-spacing:.4px;font-weight:600">Ocultar</th>
+                  <th style="text-align:left;padding:8px 12px;border-bottom:2px solid var(--border);color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px;font-weight:600;width:52%">Funcionalidade</th>
+                  <th style="text-align:center;padding:8px 12px;border-bottom:2px solid var(--border);color:#16a34a;font-size:11px;text-transform:uppercase;letter-spacing:.4px;font-weight:600">Modificar</th>
+                  <th style="text-align:center;padding:8px 12px;border-bottom:2px solid var(--border);color:#0284c7;font-size:11px;text-transform:uppercase;letter-spacing:.4px;font-weight:600">Consultar</th>
+                  <th style="text-align:center;padding:8px 12px;border-bottom:2px solid var(--border);color:#dc2626;font-size:11px;text-transform:uppercase;letter-spacing:.4px;font-weight:600">Ocultar</th>
                 </tr>
               </thead>
               <tbody>
-                ${features.map((f,i) => {
+                ${pageFeats.map((f,i) => {
                   const v = perms[f.key] || 'ocultar';
                   return `<tr style="background:${i%2===0?'#fff':'#f8fafc'}">
                     <td style="padding:9px 12px;border-bottom:1px solid var(--border);font-weight:500;color:var(--text)">${f.label}</td>
@@ -5207,6 +5211,34 @@ function renderParametros(){
                     </td>
                     <td style="padding:9px 12px;border-bottom:1px solid var(--border);text-align:center">
                       <input type="radio" name="perm-${perfil}-${f.key}" value="ocultar" ${v==='ocultar'?'checked':''} style="accent-color:#dc2626;width:16px;height:16px;cursor:pointer">
+                    </td>
+                  </tr>`;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+
+          <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">⚡ Ações</div>
+          <div style="overflow-x:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:13px">
+              <thead>
+                <tr style="background:#f8fafc">
+                  <th style="text-align:left;padding:8px 12px;border-bottom:2px solid var(--border);color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px;font-weight:600;width:52%">Ação</th>
+                  <th style="text-align:center;padding:8px 12px;border-bottom:2px solid var(--border);color:#16a34a;font-size:11px;text-transform:uppercase;letter-spacing:.4px;font-weight:600">Permitir</th>
+                  <th style="text-align:center;padding:8px 12px;border-bottom:2px solid var(--border);color:#dc2626;font-size:11px;text-transform:uppercase;letter-spacing:.4px;font-weight:600">Ocultar</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${actionFeats.map((f,i) => {
+                  const v = perms[f.key] || 'ocultar';
+                  const isPermitido = v !== 'ocultar';
+                  return `<tr style="background:${i%2===0?'#fff':'#f8fafc'}">
+                    <td style="padding:9px 12px;border-bottom:1px solid var(--border);font-weight:500;color:var(--text)">${f.label}</td>
+                    <td style="padding:9px 12px;border-bottom:1px solid var(--border);text-align:center">
+                      <input type="radio" name="perm-${perfil}-${f.key}" value="modificar" ${isPermitido?'checked':''} style="accent-color:#16a34a;width:16px;height:16px;cursor:pointer">
+                    </td>
+                    <td style="padding:9px 12px;border-bottom:1px solid var(--border);text-align:center">
+                      <input type="radio" name="perm-${perfil}-${f.key}" value="ocultar" ${!isPermitido?'checked':''} style="accent-color:#dc2626;width:16px;height:16px;cursor:pointer">
                     </td>
                   </tr>`;
                 }).join('')}
