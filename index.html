@@ -3637,147 +3637,136 @@ function baixarPlanilhaClientes() {
   URL.revokeObjectURL(a.href);
 }
 
-function baixarPlanilhaRecebimentos() {
+async function baixarPlanilhaRecebimentos() {
+  // Carrega ExcelJS sob demanda (suporte real a estilos de célula)
+  if (!window.ExcelJS) {
+    try {
+      await new Promise((res, rej) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js';
+        s.onload = res; s.onerror = rej;
+        document.head.appendChild(s);
+      });
+    } catch(e) { alert('Erro ao carregar biblioteca de Excel. Verifique sua conexão.'); return; }
+  }
+
   const empresas   = (DB.empresas && DB.empresas.length) ? DB.empresas
     : ['Reconlog','Reconlog Rental','RL Estruturas','RL Montagens','RL Brasil'];
   const vendedores = (DB.vendedores||[]).filter(v=>v.situacao!=='Inativo').map(v=>v.nome||v).filter(Boolean);
   const statusOpts = ['Automático',...Object.values(STATUS_LABELS)];
   const trataOpts  = TRATATIVAS_AREAS.map(a=>a.key);
+  const dataGer    = new Date().toLocaleDateString('pt-BR');
 
-  // ── Estilos ────────────────────────────────────────────────────
-  const azulEscuro  = 'FF1A3C5E';
-  const azulMedio   = 'FF2563A8';
-  const branco      = 'FFFFFFFF';
-  const cinzaClaro  = 'FFF1F5F9';
-  const verdeClaro  = 'FFF0FDF4';
-  const amareloClaro= 'FFFFFBEB';
-  const bordaCinza  = 'FFE2E8F0';
+  const wb = new ExcelJS.Workbook();
+  wb.creator  = 'Sistema de Cobrança Reconlog';
+  wb.created  = new Date();
 
-  const sHdr = {
-    fill:{ fgColor:{ rgb: azulEscuro } },
-    font:{ bold:true, color:{ rgb: branco }, sz:11 },
-    alignment:{ horizontal:'center', vertical:'center', wrapText:true },
-    border:{ top:{style:'thin',color:{rgb:azulMedio}}, bottom:{style:'thin',color:{rgb:azulMedio}},
-             left:{style:'thin',color:{rgb:azulMedio}}, right:{style:'thin',color:{rgb:azulMedio}} }
-  };
-  const sTitulo = {
-    fill:{ fgColor:{ rgb: azulMedio } },
-    font:{ bold:true, color:{ rgb: branco }, sz:14 },
-    alignment:{ horizontal:'center', vertical:'center' }
-  };
-  const sSubtit = {
-    fill:{ fgColor:{ rgb: cinzaClaro } },
-    font:{ italic:true, color:{ rgb: 'FF475569' }, sz:9 },
-    alignment:{ horizontal:'left', vertical:'center' }
-  };
-  const sEx = {
-    fill:{ fgColor:{ rgb: verdeClaro } },
-    font:{ italic:true, color:{ rgb: 'FF14532D' }, sz:10 },
-    alignment:{ vertical:'center' },
-    border:{ top:{style:'thin',color:{rgb:bordaCinza}}, bottom:{style:'dashed',color:{rgb:'FF86EFAC'}},
-             left:{style:'thin',color:{rgb:bordaCinza}}, right:{style:'thin',color:{rgb:bordaCinza}} }
-  };
-  const sData = {
-    fill:{ fgColor:{ rgb: branco } },
-    font:{ sz:10 },
-    alignment:{ vertical:'center' },
-    border:{ top:{style:'thin',color:{rgb:bordaCinza}}, bottom:{style:'thin',color:{rgb:bordaCinza}},
-             left:{style:'thin',color:{rgb:bordaCinza}}, right:{style:'thin',color:{rgb:bordaCinza}} }
-  };
-
-  const mkCell = (v, t, s) => ({ v, t: t||'s', s: s||sData });
-
-  // ── Estrutura da aba principal ─────────────────────────────────
-  // Linha 1: Título   (A1:H1 merged)
-  // Linha 2: Instrução (A2:H2 merged)
-  // Linha 3: Cabeçalhos (detectados pelo importador, pois têm 8 células ≥3)
-  // Linha 4: Exemplo em verde (apagar antes de importar)
-  // Linha 5+: Dados
-
-  const ws = {};
-  ws['!merges'] = [
-    { s:{r:0,c:0}, e:{r:0,c:7} },
-    { s:{r:1,c:0}, e:{r:1,c:7} },
-  ];
-
-  // Linha 1 – Título
-  ws['A1'] = mkCell('MODELO DE IMPORTAÇÃO — RECEBIMENTOS VENCIDOS', 's', sTitulo);
-  ['B','C','D','E','F','G','H'].forEach(c => { ws[`${c}1`] = mkCell('','s',sTitulo); });
-
-  // Linha 2 – Instrução
-  const dataGer = new Date().toLocaleDateString('pt-BR');
-  ws['A2'] = mkCell(
-    `ℹ️  Campos com * são obrigatórios. Preencha a partir da linha 5. ` +
-    `Apague a linha de exemplo (linha 4) antes de importar. ` +
-    `Listas suspensas refletem os cadastros atuais do sistema — gerado em ${dataGer}.`,
-    's', sSubtit
-  );
-  ['B','C','D','E','F','G','H'].forEach(c => { ws[`${c}2`] = mkCell('','s',sSubtit); });
-
-  // Linha 3 – Cabeçalhos
-  const hdrs = [
-    'Nº NF *','Cliente *','Vencimento * (AAAA-MM-DD)','Valor da Nota *',
-    'Empresa *','Status','Em Tratativa Com','Vendedor'
-  ];
-  hdrs.forEach((h,i) => {
-    ws[XLSX.utils.encode_cell({r:2,c:i})] = mkCell(h, 's', sHdr);
-  });
-
-  // Linha 4 – Exemplo (verde) — para ser apagada antes de importar
-  const exVals = [
-    'NF-00001', 'Nome do Cliente Exemplo', '2026-01-31', 15000,
-    empresas[0]||'', 'Automático', trataOpts[0]||'', vendedores[0]||''
-  ];
-  const exTypes = ['s','s','s','n','s','s','s','s'];
-  exVals.forEach((v,i) => {
-    ws[XLSX.utils.encode_cell({r:3,c:i})] = { v, t: exTypes[i], s: sEx };
-  });
-
-  // Linhas 5-1001 – área de dados
-  for (let r=4; r<=1000; r++) {
-    for (let c=0; c<8; c++) {
-      ws[XLSX.utils.encode_cell({r,c})] = mkCell('', c===3?'n':'s', sData);
-    }
+  // ── Aba oculta Listas ────────────────────────────────────────
+  const wsL = wb.addWorksheet('Listas');
+  wsL.state = 'hidden';
+  const maxR = Math.max(empresas.length, statusOpts.length, trataOpts.length, vendedores.length);
+  for (let i=0; i<maxR; i++) {
+    wsL.addRow([empresas[i]||'', statusOpts[i]||'', trataOpts[i]||'', vendedores[i]||'']);
   }
 
-  ws['!ref'] = XLSX.utils.encode_range({s:{r:0,c:0}, e:{r:1000,c:7}});
-  ws['!cols'] = [{wch:14},{wch:28},{wch:22},{wch:16},{wch:22},{wch:22},{wch:24},{wch:24}];
-  ws['!rows'] = [{hpt:30},{hpt:36},{hpt:28},{hpt:20}];
-  ws['!freeze'] = { xSplit:0, ySplit:3 };
-
-  // ── Validações — dropdowns (a partir da linha 4, índice 3) ─────
-  const mkDV = (sqref, col, rows) => ({
-    type:'list', sqref,
-    formula1:`Listas!$${col}$1:$${col}$${rows}`,
-    allow_blank:true, showDropDown:false,
-    showErrorMessage:true,
-    errorTitle:'Valor inválido',
-    error:'Selecione um valor da lista suspensa.'
-  });
-  ws['!datavalidations'] = [
-    mkDV('E4:E1001', 'A', empresas.length),
-    mkDV('F4:F1001', 'B', statusOpts.length),
-    mkDV('G4:G1001', 'C', trataOpts.length),
-    ...(vendedores.length ? [mkDV('H4:H1001', 'D', vendedores.length)] : [])
+  // ── Aba principal ─────────────────────────────────────────────
+  const ws = wb.addWorksheet('Recebimentos', { views: [{ state:'frozen', ySplit:3, topLeftCell:'A4' }] });
+  ws.columns = [
+    { key:'nf',    width:16 }, { key:'cli',   width:32 }, { key:'venc',  width:24 },
+    { key:'valor', width:18 }, { key:'emp',   width:24 }, { key:'status',width:22 },
+    { key:'trat',  width:28 }, { key:'vend',  width:28 },
   ];
 
-  // ── Aba oculta Listas ─────────────────────────────────────────
-  const maxR = Math.max(empresas.length, statusOpts.length, trataOpts.length, vendedores.length);
-  const listasData = Array.from({length:maxR}, (_,i) => [
-    empresas[i]   || '',
-    statusOpts[i] || '',
-    trataOpts[i]  || '',
-    vendedores[i] || ''
+  // helper de estilo de célula
+  const applyStyle = (cell, style) => Object.assign(cell, style);
+  const borda = (color='FFE2E8F0', style='thin') =>
+    ({ top:{style,color:{argb:color}}, bottom:{style,color:{argb:color}},
+       left:{style,color:{argb:color}}, right:{style,color:{argb:color}} });
+
+  // ── Linha 1: Título ───────────────────────────────────────────
+  const r1 = ws.addRow(['MODELO DE IMPORTAÇÃO — RECEBIMENTOS VENCIDOS','','','','','','','']);
+  ws.mergeCells('A1:H1');
+  r1.height = 34;
+  r1.getCell(1).fill   = { type:'pattern', pattern:'solid', fgColor:{ argb:'FF1A3C5E' } };
+  r1.getCell(1).font   = { bold:true, color:{ argb:'FFFFFFFF' }, size:14, name:'Calibri' };
+  r1.getCell(1).alignment = { horizontal:'center', vertical:'middle' };
+  r1.getCell(1).border = borda('FF2563A8','medium');
+
+  // ── Linha 2: Instrução ────────────────────────────────────────
+  const r2 = ws.addRow([
+    `  Campos marcados com * são obrigatórios. Preencha a partir da linha 5. ` +
+    `Apague a linha de exemplo (linha 4) antes de importar. ` +
+    `As listas suspensas refletem os cadastros atuais do sistema — gerado em ${dataGer}.`,
+    '','','','','','',''
   ]);
-  const wsL = XLSX.utils.aoa_to_sheet(listasData);
+  ws.mergeCells('A2:H2');
+  r2.height = 30;
+  r2.getCell(1).fill      = { type:'pattern', pattern:'solid', fgColor:{ argb:'FFE8F4FD' } };
+  r2.getCell(1).font      = { italic:true, color:{ argb:'FF1E40AF' }, size:9, name:'Calibri' };
+  r2.getCell(1).alignment = { horizontal:'left', vertical:'middle', wrapText:false };
+  r2.getCell(1).border    = borda('FFBfDBFE','thin');
 
-  // ── Workbook ──────────────────────────────────────────────────
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws,  'Recebimentos');
-  XLSX.utils.book_append_sheet(wb, wsL, 'Listas');
-  wb.Workbook = { Sheets: [{},{Hidden:1}] };
+  // ── Linha 3: Cabeçalhos ───────────────────────────────────────
+  const hdrs = ['Nº NF *','Cliente *','Vencimento *\n(AAAA-MM-DD)','Valor da Nota *','Empresa *','Status','Em Tratativa Com','Vendedor'];
+  const r3 = ws.addRow(hdrs);
+  r3.height = 30;
+  r3.eachCell(cell => {
+    cell.fill      = { type:'pattern', pattern:'solid', fgColor:{ argb:'FF1E3A5F' } };
+    cell.font      = { bold:true, color:{ argb:'FFFFFFFF' }, size:10, name:'Calibri' };
+    cell.alignment = { horizontal:'center', vertical:'middle', wrapText:true };
+    cell.border    = { top:{style:'medium',color:{argb:'FF2563A8'}}, bottom:{style:'medium',color:{argb:'FFFBBF24'}},
+                       left:{style:'thin',color:{argb:'FF2563A8'}}, right:{style:'thin',color:{argb:'FF2563A8'}} };
+  });
 
-  XLSX.writeFile(wb, 'Modelo_Importacao_Recebimentos.xlsx', { cellStyles:true });
+  // ── Linha 4: Exemplo ─────────────────────────────────────────
+  const r4 = ws.addRow(['NF-00001','Nome do Cliente Exemplo','2026-01-31',15000,
+    empresas[0]||'','Automático',trataOpts[0]||'',vendedores[0]||'']);
+  r4.height = 20;
+  r4.eachCell((cell,col) => {
+    cell.fill      = { type:'pattern', pattern:'solid', fgColor:{ argb:'FFF0FDF4' } };
+    cell.font      = { italic:true, color:{ argb:'FF166534' }, size:10, name:'Calibri' };
+    cell.alignment = { vertical:'middle' };
+    cell.border    = borda('FF86EFAC','thin');
+    if (col===4) { cell.numFmt='#,##0.00'; }
+  });
+  r4.getCell(1).value = '⚠ NF-00001 — APAGUE ESTA LINHA ANTES DE IMPORTAR';
+
+  // ── Linhas 5-500: área de dados ───────────────────────────────
+  for (let i=5; i<=500; i++) {
+    const row = ws.addRow(['','','',null,'','','','']);
+    row.height = 18;
+    const bg = i%2===0 ? 'FFF8FAFC' : 'FFFFFFFF';
+    row.eachCell({ includeEmpty:true }, (cell,col) => {
+      cell.fill      = { type:'pattern', pattern:'solid', fgColor:{ argb:bg } };
+      cell.font      = { size:10, name:'Calibri' };
+      cell.alignment = { vertical:'middle' };
+      cell.border    = borda('FFE2E8F0','hair');
+      if (col===4) { cell.numFmt='#,##0.00'; }
+    });
+  }
+
+  // ── Dropdowns (referenciando aba Listas) ──────────────────────
+  const addDV = (col, listCol, count) => {
+    ws.dataValidations.add(`${col}4:${col}500`, {
+      type:'list', allowBlank:true,
+      formulae:[`Listas!$${listCol}$1:$${listCol}$${count}`],
+      showErrorMessage:true, errorStyle:'stop',
+      errorTitle:'Valor inválido', error:'Selecione um valor da lista suspensa.'
+    });
+  };
+  addDV('E','A',empresas.length);
+  addDV('F','B',statusOpts.length);
+  addDV('G','C',trataOpts.length);
+  if (vendedores.length) addDV('H','D',vendedores.length);
+
+  // ── Download ──────────────────────────────────────────────────
+  const buffer = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url  = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'Modelo_Importacao_Recebimentos.xlsx';
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
 }
 
 function abrirImportClientes() {
