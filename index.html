@@ -501,11 +501,12 @@ const SUPER_ADMINS = ['mauricio@reconlog.com.br', 'mauriciokosempa@gmail.com'];
 
 // Áreas de tratativa (substatus "Em tratativa com")
 const TRATATIVAS_AREAS = [
-  { key: 'Comercial',         color: '#3b82f6', bg: '#eff6ff', text: '#1e40af', icon: '🤝' },
-  { key: 'Faturamento',       color: '#f59e0b', bg: '#fffbeb', text: '#92400e', icon: '🧾' },
-  { key: 'Jurídico RL',       color: '#ef4444', bg: '#fef2f2', text: '#991b1b', icon: '⚖️' },
-  { key: 'Jurídico Externo',  color: '#8b5cf6', bg: '#f5f3ff', text: '#5b21b6', icon: '🏛️' },
-  { key: 'Processo Judicial', color: '#b91c1c', bg: '#fff1f2', text: '#881337', icon: '⚠️' },
+  { key: 'Comercial',          color: '#3b82f6', bg: '#eff6ff', text: '#1e40af', icon: '🤝' },
+  { key: 'Faturamento',        color: '#f59e0b', bg: '#fffbeb', text: '#92400e', icon: '🧾' },
+  { key: 'Empresa de Cobrança',color: '#0e7490', bg: '#ecfeff', text: '#164e63', icon: '🏢' },
+  { key: 'Jurídico RL',        color: '#ef4444', bg: '#fef2f2', text: '#991b1b', icon: '⚖️' },
+  { key: 'Jurídico Externo',   color: '#8b5cf6', bg: '#f5f3ff', text: '#5b21b6', icon: '🏛️' },
+  { key: 'Processo Judicial',  color: '#b91c1c', bg: '#fff1f2', text: '#881337', icon: '⚠️' },
 ];
 function getTratativaArea(key) {
   return TRATATIVAS_AREAS.find(a => a.key === key) || null;
@@ -1872,7 +1873,6 @@ function renderDashboard() {
       <div class="kpi" style="border-color:#c2410c;border-width:2px;cursor:pointer" onclick="abrirKpiModal('cobav')"><div class="label" style="color:#c2410c">Cob. Avançada</div><div class="value" style="color:#c2410c">${fmtKpi(valCobAv)}</div><div style="font-size:11px;color:#c2410c;margin-top:2px;opacity:.8">${flagCobAv} título(s)</div></div>
       <div class="kpi warning" style="cursor:pointer;border-color:#d97706;border-width:2px" onclick="abrirKpiModal('cartorio')"><div class="label" style="color:#d97706">Aguard. Cartório</div><div class="value">${fmtKpi(valAguardCart)}</div><div style="font-size:11px;color:#d97706;margin-top:2px;opacity:.8">${flagCart} título(s)</div></div>
       <div class="kpi" style="border-color:#7c3aed;border-width:2px;cursor:pointer" onclick="abrirKpiModal('protestado')"><div class="label" style="color:#7c3aed">Protestado</div><div class="value" style="color:#7c3aed">${fmtKpi(valCart)}</div><div style="font-size:11px;color:#7c3aed;margin-top:2px;opacity:.8">${flagEnvCart+flagProt} título(s)</div></div>
-      <div class="kpi info" style="cursor:pointer;border-color:#0e7490;border-width:2px" onclick="abrirKpiModal('empcob')"><div class="label" style="color:#0e7490">Emp. Cobrança</div><div class="value">${fmtKpi(valEmp)}</div><div style="font-size:11px;color:#0e7490;margin-top:2px;opacity:.8">${notas.filter(n=>['emp_cobranca','enviar_juridico'].includes(calcStatus(n))).length} título(s)</div></div>
       <div class="kpi" style="cursor:pointer;border-color:#7f1d1d;border-width:2px" onclick="abrirKpiModal('juridico')"><div class="label" style="color:#7f1d1d">Jurídico</div><div class="value" style="color:#7f1d1d">${fmtKpi(valJur)}</div><div style="font-size:11px;color:#7f1d1d;margin-top:2px;opacity:.8">${flagJur} título(s)</div></div>
     </div>
 
@@ -3198,6 +3198,7 @@ function flagEmpCob(id) {
   const dt = prompt('Confirmar envio à Empresa de Cobrança.\nData (AAAA-MM-DD):', today());
   if (!dt) return;
   n.dataEmpCob = dt;
+  n.emTrativaCom = 'Empresa de Cobrança';  // aparece no Mapa de Tratativas
   addHist(n, 'Emp. Cobrança', `Enviado à Emp. Cobrança em ${dt}`);
   saveDB(); filterVencidos(); alert('✅ Atualizado para "Emp. Cobrança"');
 }
@@ -3639,29 +3640,112 @@ function baixarPlanilhaClientes() {
 function baixarPlanilhaRecebimentos() {
   const empresas   = (DB.empresas && DB.empresas.length) ? DB.empresas
     : ['Reconlog','Reconlog Rental','RL Estruturas','RL Montagens','RL Brasil'];
-  const vendedores = (DB.vendedores||[]).map(v=>v.nome||v).filter(Boolean);
+  const vendedores = (DB.vendedores||[]).filter(v=>v.situacao!=='Inativo').map(v=>v.nome||v).filter(Boolean);
   const statusOpts = ['Automático',...Object.values(STATUS_LABELS)];
   const trataOpts  = TRATATIVAS_AREAS.map(a=>a.key);
 
-  // ── Aba principal ──────────────────────────────────────────────
-  const headers = ['Nº NF','Cliente','Vencimento','Valor da Nota','Empresa','Status','Em Tratativa','Vendedor'];
-  const exemplo = ['NF-00001','Nome do Cliente','2026-01-31',15000,
-    empresas[0],'Automático','',vendedores[0]||'Vendedor Exemplo'];
-  const ws = XLSX.utils.aoa_to_sheet([headers, exemplo]);
-  ws['!cols'] = [{wch:12},{wch:25},{wch:14},{wch:16},{wch:22},{wch:22},{wch:22},{wch:22}];
+  // ── Estilos ────────────────────────────────────────────────────
+  const azulEscuro  = 'FF1A3C5E';
+  const azulMedio   = 'FF2563A8';
+  const branco      = 'FFFFFFFF';
+  const cinzaClaro  = 'FFF1F5F9';
+  const verdeClaro  = 'FFF0FDF4';
+  const amareloClaro= 'FFFFFBEB';
+  const bordaCinza  = 'FFE2E8F0';
 
-  // ── Aba oculta com listas (evita limite de 255 chars do Excel) ─
-  // Coluna A=Empresa, B=Status, C=Tratativa, D=Vendedor
-  const maxR = Math.max(empresas.length, statusOpts.length, trataOpts.length, vendedores.length);
-  const listasData = Array.from({length:maxR}, (_,i) => [
-    empresas[i]   || '',
-    statusOpts[i] || '',
-    trataOpts[i]  || '',
-    vendedores[i] || ''
-  ]);
-  const wsL = XLSX.utils.aoa_to_sheet(listasData);
+  const sHdr = {
+    fill:{ fgColor:{ rgb: azulEscuro } },
+    font:{ bold:true, color:{ rgb: branco }, sz:11 },
+    alignment:{ horizontal:'center', vertical:'center', wrapText:true },
+    border:{ top:{style:'thin',color:{rgb:azulMedio}}, bottom:{style:'thin',color:{rgb:azulMedio}},
+             left:{style:'thin',color:{rgb:azulMedio}}, right:{style:'thin',color:{rgb:azulMedio}} }
+  };
+  const sTitulo = {
+    fill:{ fgColor:{ rgb: azulMedio } },
+    font:{ bold:true, color:{ rgb: branco }, sz:14 },
+    alignment:{ horizontal:'center', vertical:'center' }
+  };
+  const sSubtit = {
+    fill:{ fgColor:{ rgb: cinzaClaro } },
+    font:{ italic:true, color:{ rgb: 'FF475569' }, sz:9 },
+    alignment:{ horizontal:'left', vertical:'center' }
+  };
+  const sEx = {
+    fill:{ fgColor:{ rgb: verdeClaro } },
+    font:{ italic:true, color:{ rgb: 'FF14532D' }, sz:10 },
+    alignment:{ vertical:'center' },
+    border:{ top:{style:'thin',color:{rgb:bordaCinza}}, bottom:{style:'dashed',color:{rgb:'FF86EFAC'}},
+             left:{style:'thin',color:{rgb:bordaCinza}}, right:{style:'thin',color:{rgb:bordaCinza}} }
+  };
+  const sData = {
+    fill:{ fgColor:{ rgb: branco } },
+    font:{ sz:10 },
+    alignment:{ vertical:'center' },
+    border:{ top:{style:'thin',color:{rgb:bordaCinza}}, bottom:{style:'thin',color:{rgb:bordaCinza}},
+             left:{style:'thin',color:{rgb:bordaCinza}}, right:{style:'thin',color:{rgb:bordaCinza}} }
+  };
 
-  // ── Validações por range na aba Listas ────────────────────────
+  const mkCell = (v, t, s) => ({ v, t: t||'s', s: s||sData });
+
+  // ── Estrutura da aba principal ─────────────────────────────────
+  // Linha 1: Título   (A1:H1 merged)
+  // Linha 2: Instrução (A2:H2 merged)
+  // Linha 3: Cabeçalhos (detectados pelo importador, pois têm 8 células ≥3)
+  // Linha 4: Exemplo em verde (apagar antes de importar)
+  // Linha 5+: Dados
+
+  const ws = {};
+  ws['!merges'] = [
+    { s:{r:0,c:0}, e:{r:0,c:7} },
+    { s:{r:1,c:0}, e:{r:1,c:7} },
+  ];
+
+  // Linha 1 – Título
+  ws['A1'] = mkCell('MODELO DE IMPORTAÇÃO — RECEBIMENTOS VENCIDOS', 's', sTitulo);
+  ['B','C','D','E','F','G','H'].forEach(c => { ws[`${c}1`] = mkCell('','s',sTitulo); });
+
+  // Linha 2 – Instrução
+  const dataGer = new Date().toLocaleDateString('pt-BR');
+  ws['A2'] = mkCell(
+    `ℹ️  Campos com * são obrigatórios. Preencha a partir da linha 5. ` +
+    `Apague a linha de exemplo (linha 4) antes de importar. ` +
+    `Listas suspensas refletem os cadastros atuais do sistema — gerado em ${dataGer}.`,
+    's', sSubtit
+  );
+  ['B','C','D','E','F','G','H'].forEach(c => { ws[`${c}2`] = mkCell('','s',sSubtit); });
+
+  // Linha 3 – Cabeçalhos
+  const hdrs = [
+    'Nº NF *','Cliente *','Vencimento * (AAAA-MM-DD)','Valor da Nota *',
+    'Empresa *','Status','Em Tratativa Com','Vendedor'
+  ];
+  hdrs.forEach((h,i) => {
+    ws[XLSX.utils.encode_cell({r:2,c:i})] = mkCell(h, 's', sHdr);
+  });
+
+  // Linha 4 – Exemplo (verde) — para ser apagada antes de importar
+  const exVals = [
+    'NF-00001', 'Nome do Cliente Exemplo', '2026-01-31', 15000,
+    empresas[0]||'', 'Automático', trataOpts[0]||'', vendedores[0]||''
+  ];
+  const exTypes = ['s','s','s','n','s','s','s','s'];
+  exVals.forEach((v,i) => {
+    ws[XLSX.utils.encode_cell({r:3,c:i})] = { v, t: exTypes[i], s: sEx };
+  });
+
+  // Linhas 5-1001 – área de dados
+  for (let r=4; r<=1000; r++) {
+    for (let c=0; c<8; c++) {
+      ws[XLSX.utils.encode_cell({r,c})] = mkCell('', c===3?'n':'s', sData);
+    }
+  }
+
+  ws['!ref'] = XLSX.utils.encode_range({s:{r:0,c:0}, e:{r:1000,c:7}});
+  ws['!cols'] = [{wch:14},{wch:28},{wch:22},{wch:16},{wch:22},{wch:22},{wch:24},{wch:24}];
+  ws['!rows'] = [{hpt:30},{hpt:36},{hpt:28},{hpt:20}];
+  ws['!freeze'] = { xSplit:0, ySplit:3 };
+
+  // ── Validações — dropdowns (a partir da linha 4, índice 3) ─────
   const mkDV = (sqref, col, rows) => ({
     type:'list', sqref,
     formula1:`Listas!$${col}$1:$${col}$${rows}`,
@@ -3671,19 +3755,29 @@ function baixarPlanilhaRecebimentos() {
     error:'Selecione um valor da lista suspensa.'
   });
   ws['!datavalidations'] = [
-    mkDV('E2:E1000', 'A', empresas.length),
-    mkDV('F2:F1000', 'B', statusOpts.length),
-    mkDV('G2:G1000', 'C', trataOpts.length),
-    ...(vendedores.length ? [mkDV('H2:H1000', 'D', vendedores.length)] : [])
+    mkDV('E4:E1001', 'A', empresas.length),
+    mkDV('F4:F1001', 'B', statusOpts.length),
+    mkDV('G4:G1001', 'C', trataOpts.length),
+    ...(vendedores.length ? [mkDV('H4:H1001', 'D', vendedores.length)] : [])
   ];
 
-  // ── Monta workbook e oculta aba Listas ────────────────────────
+  // ── Aba oculta Listas ─────────────────────────────────────────
+  const maxR = Math.max(empresas.length, statusOpts.length, trataOpts.length, vendedores.length);
+  const listasData = Array.from({length:maxR}, (_,i) => [
+    empresas[i]   || '',
+    statusOpts[i] || '',
+    trataOpts[i]  || '',
+    vendedores[i] || ''
+  ]);
+  const wsL = XLSX.utils.aoa_to_sheet(listasData);
+
+  // ── Workbook ──────────────────────────────────────────────────
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws,  'Recebimentos');
   XLSX.utils.book_append_sheet(wb, wsL, 'Listas');
-  wb.Workbook = { Sheets: [{},{Hidden:1}] };   // oculta aba Listas
+  wb.Workbook = { Sheets: [{},{Hidden:1}] };
 
-  XLSX.writeFile(wb, 'Modelo_Importacao_Recebimentos.xlsx');
+  XLSX.writeFile(wb, 'Modelo_Importacao_Recebimentos.xlsx', { cellStyles:true });
 }
 
 function abrirImportClientes() {
