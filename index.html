@@ -533,6 +533,35 @@ function isGestor() {
   return _currentUser.role === 'admin' || _currentUser.role === 'gestor';
 }
 
+// ── SISTEMA DE PERMISSÕES CONFIGURÁVEIS ──────────────────────────────────────
+const PERM_DEFAULTS = {
+  gestor: {
+    vencidos:'modificar', crm:'modificar', vendedores:'modificar',
+    clientes:'modificar', importar:'modificar', parametros:'ocultar',
+    templates:'modificar', configuracoes:'ocultar',
+    gerarRelatorio:'modificar', exportarPlanilha:'modificar',
+    enviarEmail:'modificar', enviarWhatsapp:'modificar'
+  },
+  consulta: {
+    vencidos:'consultar', crm:'consultar', vendedores:'consultar',
+    clientes:'consultar', importar:'ocultar', parametros:'ocultar',
+    templates:'ocultar', configuracoes:'ocultar',
+    gerarRelatorio:'consultar', exportarPlanilha:'consultar',
+    enviarEmail:'ocultar', enviarWhatsapp:'ocultar'
+  }
+};
+
+function getPerm(feature) {
+  if (isAdmin()) return 'modificar';
+  if (!_currentUser) return 'ocultar';
+  const perfil = _currentUser.role === 'gestor' ? 'gestor' : 'consulta';
+  const perms = DB.config.permissoes?.[perfil] || PERM_DEFAULTS[perfil];
+  return perms[feature] || 'ocultar';
+}
+function canView(feature)   { return getPerm(feature) !== 'ocultar'; }
+function canModify(feature) { return getPerm(feature) === 'modificar'; }
+// ─────────────────────────────────────────────────────────────────────────────
+
 function getMsalApp() {
   const cfg = DB.config;
   if (!cfg.msClientId) return null;
@@ -763,13 +792,15 @@ async function logoutMs() {
 }
 
 function atualizarNavPorPerfil() {
+  const pageToFeat = {
+    vencidos:'vencidos', crm:'crm', vendedores:'vendedores', clientes:'clientes',
+    importar:'importar', parametros:'parametros', templates:'templates', configuracoes:'configuracoes'
+  };
   document.querySelectorAll('#nav-links a').forEach(a => {
     const p = a.dataset.page;
-    if (['configuracoes','parametros'].includes(p)) {
-      a.style.display = isAdmin() ? '' : 'none';
-    } else if (['importar','templates'].includes(p)) {
-      a.style.display = isGestor() ? '' : 'none';
-    }
+    if (!p || p === 'dashboard') return;
+    const feat = pageToFeat[p];
+    a.style.display = (isAdmin() || (feat && canView(feat))) ? '' : 'none';
   });
 }
 
@@ -1453,10 +1484,14 @@ const PAGES = {
 let currentPage = 'dashboard';
 
 function navigate(page) {
-  const somenteAdmin = ['configuracoes','parametros'];
-  const somenteGestor = ['importar','templates'];
-  if (somenteAdmin.includes(page) && !isAdmin()) { page = 'dashboard'; }
-  if (somenteGestor.includes(page) && !isGestor()) { page = 'dashboard'; }
+  if (!isAdmin() && page !== 'dashboard') {
+    const pageToFeat = {
+      vencidos:'vencidos', crm:'crm', vendedores:'vendedores', clientes:'clientes',
+      importar:'importar', parametros:'parametros', templates:'templates', configuracoes:'configuracoes'
+    };
+    const feat = pageToFeat[page];
+    if (feat && !canView(feat)) { page = 'dashboard'; }
+  }
   currentPage = page;
   document.querySelectorAll('#nav-links a').forEach(a => a.classList.toggle('active', a.dataset.page === page));
   document.getElementById('page-title').textContent = PAGES[page].title;
@@ -1595,7 +1630,7 @@ function renderDashboard() {
     </div>`);
   }
   // --- Alertas de envio: E-mail Vendedores ---
-  if (DB.config.envioEmailAtivo) {
+  if (DB.config.envioEmailAtivo && canView('enviarEmail')) {
     const hora = DB.config.horarioRelatorio || '08:00';
     if (DB.config.ultimoEnvioEmailVend !== today()) {
       alertas.push(`<div class="alert" style="background:#f0f9ff;border:1px solid #38bdf8;color:#0c4a6e;justify-content:space-between;align-items:center">
@@ -1610,7 +1645,7 @@ function renderDashboard() {
     }
   }
   // --- Alertas de envio: WhatsApp Vendedores ---
-  if (DB.config.envioWhatsAtivo) {
+  if (DB.config.envioWhatsAtivo && canView('enviarWhatsapp')) {
     if (DB.config.ultimoEnvioWAVend !== today()) {
       alertas.push(`<div class="alert" style="background:#f0fdf4;border:1px solid #86efac;color:#14532d;justify-content:space-between;align-items:center">
         <span>📱 <b>WhatsApp Vendedores</b> — ainda não enviado hoje.</span>
@@ -1624,7 +1659,7 @@ function renderDashboard() {
     }
   }
   // --- Alertas de envio: E-mail Clientes ---
-  if (DB.config.envioEmailAtivo) {
+  if (DB.config.envioEmailAtivo && canView('enviarEmail')) {
     if (DB.config.ultimoEnvioEmailCli !== today()) {
       alertas.push(`<div class="alert" style="background:#fff7ed;border:1px solid #fdba74;color:#7c2d12;justify-content:space-between;align-items:center">
         <span>📧 <b>E-mail Clientes</b> — ainda não enviado hoje.</span>
@@ -1638,7 +1673,7 @@ function renderDashboard() {
     }
   }
   // --- Alertas de envio: WhatsApp Clientes ---
-  if (DB.config.envioWhatsAtivo) {
+  if (DB.config.envioWhatsAtivo && canView('enviarWhatsapp')) {
     if (DB.config.ultimoEnvioWACli !== today()) {
       alertas.push(`<div class="alert" style="background:#fff7ed;border:1px solid #fdba74;color:#7c2d12;justify-content:space-between;align-items:center">
         <span>📱 <b>WhatsApp Clientes</b> — ainda não enviado hoje.</span>
@@ -1829,7 +1864,7 @@ function renderDashboard() {
     ${mapaHtml}
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
       <span style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px">Indicadores — clique para detalhar</span>
-      <button class="btn btn-ghost btn-sm" onclick="gerarRelatorioIndicadores()" style="font-size:12px">📄 Gerar Relatório</button>
+      ${canView('gerarRelatorio') ? `<button class="btn btn-ghost btn-sm" onclick="gerarRelatorioIndicadores()" style="font-size:12px">📄 Gerar Relatório</button>` : ''}
     </div>
     <div class="kpi-grid">
       <div class="kpi danger" title="${fmt(totalVencido)}" style="cursor:pointer;border-color:#dc2626;border-width:2px" onclick="abrirKpiModal('vencido')"><div class="label" style="color:#dc2626">Total Vencido</div><div class="value">${fmtKpi(totalVencido)}</div></div>
@@ -2127,8 +2162,8 @@ function renderVencidos() {
             style="border:1px solid #6ee7b7;color:#065f46;background:#f0fdf4" title="Ver títulos reprogramados">
             🔄 Reprogramados
           </button>
-          <button class="btn btn-primary btn-sm" onclick="openNotaForm()">➕ Novo Lançamento</button>
-          <button class="btn btn-ghost btn-sm" onclick="exportVencidos()">📥 Exportar</button>
+          ${canModify('vencidos') ? `<button class="btn btn-primary btn-sm" onclick="openNotaForm()">➕ Novo Lançamento</button>` : ''}
+          ${canView('exportarPlanilha') ? `<button class="btn btn-ghost btn-sm" onclick="exportVencidos()">📥 Exportar</button>` : ''}
         </div>
       </div>
       <div id="v-bulk-bar" style="display:none;align-items:center;gap:12px;background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:10px 16px;margin-bottom:12px">
@@ -5119,6 +5154,71 @@ function renderParametros(){
         <button class="btn btn-primary" onclick="salvarPerfisAcesso()">💾 Salvar e Enviar Convites</button>
         <span id="perfis-status" style="font-size:12px;color:var(--text-muted)"></span>
       </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">🛡️ Permissões por Perfil</div>
+      <p style="font-size:13px;color:var(--text-muted);margin-bottom:20px">
+        Defina o que cada perfil pode fazer. <b>Admin</b> sempre tem acesso total. <b>Ocultar</b> remove o item do menu; <b>Consultar</b> permite visualizar sem alterar; <b>Modificar</b> dá acesso completo.
+      </p>
+      ${['gestor','consulta'].map(perfil => {
+        const label = perfil === 'gestor' ? '👔 Login Gestor' : '👁️ Login Consulta';
+        const cor = perfil === 'gestor' ? '#0284c7' : '#64748b';
+        const perms = DB.config.permissoes?.[perfil] || PERM_DEFAULTS[perfil];
+        const features = [
+          { key:'vencidos',        label:'Recebimentos Vencidos' },
+          { key:'crm',             label:'CRM – Tratativas' },
+          { key:'vendedores',      label:'Cadastro de Vendedores' },
+          { key:'clientes',        label:'Cadastro de Clientes' },
+          { key:'importar',        label:'Importar Planilha' },
+          { key:'parametros',      label:'Parâmetros' },
+          { key:'templates',       label:'Templates de Mensagem' },
+          { key:'configuracoes',   label:'Configurações' },
+          { key:'gerarRelatorio',  label:'Gerar Relatório' },
+          { key:'exportarPlanilha',label:'Exportar Planilha' },
+          { key:'enviarEmail',     label:'Enviar Relatório E-mail' },
+          { key:'enviarWhatsapp',  label:'Enviar Relatório WhatsApp' },
+        ];
+        return `
+        <div style="margin-bottom:28px">
+          <div style="font-size:14px;font-weight:700;color:${cor};margin-bottom:12px;display:flex;align-items:center;gap:8px">
+            ${label}
+          </div>
+          <div style="overflow-x:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:13px">
+              <thead>
+                <tr style="background:#f8fafc">
+                  <th style="text-align:left;padding:8px 12px;border-bottom:2px solid var(--border);color:var(--text-muted);font-size:11.5px;text-transform:uppercase;letter-spacing:.4px;font-weight:600;width:55%">Funcionalidade</th>
+                  <th style="text-align:center;padding:8px 12px;border-bottom:2px solid var(--border);color:#16a34a;font-size:11.5px;text-transform:uppercase;letter-spacing:.4px;font-weight:600">Modificar</th>
+                  <th style="text-align:center;padding:8px 12px;border-bottom:2px solid var(--border);color:#0284c7;font-size:11.5px;text-transform:uppercase;letter-spacing:.4px;font-weight:600">Consultar</th>
+                  <th style="text-align:center;padding:8px 12px;border-bottom:2px solid var(--border);color:#dc2626;font-size:11.5px;text-transform:uppercase;letter-spacing:.4px;font-weight:600">Ocultar</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${features.map((f,i) => {
+                  const v = perms[f.key] || 'ocultar';
+                  return `<tr style="background:${i%2===0?'#fff':'#f8fafc'}">
+                    <td style="padding:9px 12px;border-bottom:1px solid var(--border);font-weight:500;color:var(--text)">${f.label}</td>
+                    <td style="padding:9px 12px;border-bottom:1px solid var(--border);text-align:center">
+                      <input type="radio" name="perm-${perfil}-${f.key}" value="modificar" ${v==='modificar'?'checked':''} style="accent-color:#16a34a;width:16px;height:16px;cursor:pointer">
+                    </td>
+                    <td style="padding:9px 12px;border-bottom:1px solid var(--border);text-align:center">
+                      <input type="radio" name="perm-${perfil}-${f.key}" value="consultar" ${v==='consultar'?'checked':''} style="accent-color:#0284c7;width:16px;height:16px;cursor:pointer">
+                    </td>
+                    <td style="padding:9px 12px;border-bottom:1px solid var(--border);text-align:center">
+                      <input type="radio" name="perm-${perfil}-${f.key}" value="ocultar" ${v==='ocultar'?'checked':''} style="accent-color:#dc2626;width:16px;height:16px;cursor:pointer">
+                    </td>
+                  </tr>`;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>`;
+      }).join('')}
+      <div style="display:flex;align-items:center;gap:12px;margin-top:8px">
+        <button class="btn btn-primary" onclick="salvarPermissoes()">💾 Salvar Permissões</button>
+        <span id="perm-status" style="font-size:12px;color:var(--text-muted)"></span>
+      </div>
     </div>`;
 }
 
@@ -5176,6 +5276,25 @@ async function salvarPerfisAcesso() {
     setTimeout(() => { if (st) st.textContent = ''; }, 3000);
   }
   renderParametros();
+}
+
+function salvarPermissoes() {
+  const features = ['vencidos','crm','vendedores','clientes','importar','parametros','templates','configuracoes','gerarRelatorio','exportarPlanilha','enviarEmail','enviarWhatsapp'];
+  const lerPerfil = (perfil) => {
+    const obj = {};
+    features.forEach(f => {
+      const sel = document.querySelector(`input[name="perm-${perfil}-${f}"]:checked`);
+      obj[f] = sel ? sel.value : PERM_DEFAULTS[perfil][f];
+    });
+    return obj;
+  };
+  if (!DB.config.permissoes) DB.config.permissoes = {};
+  DB.config.permissoes.gestor  = lerPerfil('gestor');
+  DB.config.permissoes.consulta = lerPerfil('consulta');
+  saveDB();
+  atualizarNavPorPerfil();
+  const st = document.getElementById('perm-status');
+  if (st) { st.textContent = '✅ Permissões salvas!'; setTimeout(() => { if(st) st.textContent=''; }, 3000); }
 }
 
 function salvarRegras(){
