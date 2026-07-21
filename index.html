@@ -664,10 +664,19 @@ async function loadDBFromCloud() {
     });
     if (!resp.ok) return false;
     const cloudData = await resp.json();
-    // Merge: aplica dados do cloud mas preserva config local (Client ID, etc.)
-    const localCfg = { ...DB.config };
+    // Merge: cloud tem prioridade total — apenas campos de conexão do dispositivo local são preservados
+    const localConexao = {
+      sharePointUrl: DB.config.sharePointUrl,
+      msClientId:    DB.config.msClientId,
+      msTenantId:    DB.config.msTenantId,
+      onedrivePath:  DB.config.onedrivePath,
+    };
     DB = { ...defaultDB(), ...cloudData };
-    DB.config = { ...DB.config, ...localCfg }; // config local tem prioridade
+    // Aplica config de conexão local só se o cloud não tiver esses valores
+    if (!DB.config.sharePointUrl && localConexao.sharePointUrl) DB.config.sharePointUrl = localConexao.sharePointUrl;
+    if (!DB.config.msClientId    && localConexao.msClientId)    DB.config.msClientId    = localConexao.msClientId;
+    if (!DB.config.msTenantId    && localConexao.msTenantId)    DB.config.msTenantId    = localConexao.msTenantId;
+    if (!DB.config.onedrivePath  && localConexao.onedrivePath)  DB.config.onedrivePath  = localConexao.onedrivePath;
     // Migrations
     if (!DB.faturamentoEmp) DB.faturamentoEmp = {};
     // Seed faturamento no sync do SharePoint também
@@ -711,12 +720,13 @@ async function saveDBToCloud() {
 async function initUserSession(account) {
   const email = (account.username||'').toLowerCase();
   const loginMsg = document.getElementById('login-msg');
+  const btn = document.getElementById('btn-login-ms');
 
   // Carrega DB do cloud primeiro para ter a lista atualizada
   if (loginMsg) loginMsg.textContent = '⏳ Carregando dados...';
   const loaded = await loadDBFromCloud();
-  if (!loaded && loginMsg) loginMsg.textContent = '⚠️ Não foi possível carregar do SharePoint — usando dados locais.';
 
+  const spConfigurado = !!DB.config.sharePointUrl;
   const admins  = (DB.config.usuariosAdmin||[]).map(e=>(e||'').toLowerCase().trim());
   const gestores = (DB.config.usuariosGestores||[]).map(e=>(e||'').toLowerCase().trim());
   const consulta = (DB.config.usuariosConsulta||[]).map(e=>(e||'').toLowerCase().trim());
@@ -725,19 +735,31 @@ async function initUserSession(account) {
   // Super Admin permanente — sempre acesso total independente das listas
   if (isSuperAdmin(email)) {
     _currentUser = { email, name: account.name || account.username, role: 'admin' };
+
+  } else if (spConfigurado && !loaded) {
+    // SharePoint configurado mas banco não carregou — não é possível verificar permissões
+    if (loginMsg) loginMsg.textContent = '❌ Não foi possível carregar os dados do sistema. Verifique sua conexão e tente novamente.';
+    if (btn) btn.disabled = false;
+    return;
+
+  } else if (spConfigurado && !todasListas) {
+    // SharePoint configurado mas nenhum usuário cadastrado nas listas — banco provavelmente zerado
+    if (loginMsg) loginMsg.textContent = '❌ Nenhum perfil de acesso configurado no sistema. Contate o administrador.';
+    if (btn) btn.disabled = false;
+    return;
+
   } else if (admins.includes(email)) {
     _currentUser = { email, name: account.name || account.username, role: 'admin' };
   } else if (gestores.includes(email)) {
     _currentUser = { email, name: account.name || account.username, role: 'gestor' };
   } else if (consulta.includes(email)) {
     _currentUser = { email, name: account.name || account.username, role: 'consulta' };
-  } else if (!todasListas) {
-    // Nenhuma lista configurada ainda — modo setup inicial, permite acesso como admin
+  } else if (!spConfigurado) {
+    // SharePoint não configurado ainda — modo setup inicial
     _currentUser = { email, name: account.name || account.username, role: 'admin' };
   } else {
     // Usuário não autorizado
     if (loginMsg) loginMsg.textContent = '❌ Acesso não autorizado. Entre em contato com o administrador.';
-    const btn = document.getElementById('btn-login-ms');
     if (btn) btn.disabled = false;
     return;
   }
