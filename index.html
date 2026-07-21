@@ -95,8 +95,6 @@
   .badge-aguardando_cartorio { background: #fee2e2; color: #b91c1c; }
   .badge-enviado_cartorio { background: #fce7f3; color: #9d174d; }
   .badge-protestado { background: #ede9fe; color: #6d28d9; }
-  .badge-emp_cobranca { background: #fdf2f8; color: #86198f; }
-  .badge-enviar_juridico { background: #fee2e2; color: #7f1d1d; border: 1px solid #b91c1c; }
   .badge-juridico { background: #1e293b; color: #f1f5f9; }
   .badge-pago { background: #dcfce7; color: #15803d; }
   .badge-aguardar { background: #e0f2fe; color: #075985; }
@@ -311,7 +309,6 @@ function defaultDB() {
       diasFimSimples: 3,
       diasFimAvancada: 6,
       diasProtestado: 16,
-      diasJuridico: 15,
       msClientId: '694c6d20-ff9e-431a-ace6-63130244c748',
       msTenantId: '687710be-ae39-48d2-8249-cd6ec4f1a4d3',
       horarioRelatorio: '08:00',
@@ -367,7 +364,6 @@ let DB = (() => {
     if (d.config.diasFimSimples  == null) d.config.diasFimSimples  = 3;
     if (d.config.diasFimAvancada == null) d.config.diasFimAvancada = 6;
     if (d.config.diasProtestado  == null) d.config.diasProtestado  = 16;
-    if (d.config.diasJuridico    == null) d.config.diasJuridico    = 15;
     return d;
   } catch { return defaultDB(); }
 })();
@@ -400,7 +396,7 @@ function setSortVencidos(campo) {
 const STATUS_LABELS = {
   a_vencer: 'A Vencer', cobranca_simples: 'Cobrança Simples', cobranca_avancada: 'Cobrança Avançada',
   aguardando_cartorio: 'Aguardando Cartório', enviado_cartorio: 'Enviado p/ Cartório',
-  protestado: 'Protestado', emp_cobranca: 'Emp. Cobrança', enviar_juridico: 'Enviar p/ Jurídico',
+  protestado: 'Protestado',
   juridico: 'Jurídico', pago: 'Pago', aguardar: 'Aguardar', perdido: 'Perdido',
   reprogramado: '🔄 Reprogramado'
 };
@@ -438,11 +434,7 @@ function calcStatus(nota) {
     // Expirou — cai em aguardando_cartorio automaticamente
   }
   if (nota.dataJuridico) return 'juridico';
-  const dj = Number(DB.config.diasJuridico || 15);
   const dp = Number(DB.config.diasProtestado || 16);
-  if (nota.dataEmpCob) {
-    return daysSince(nota.dataEmpCob) >= dj ? 'enviar_juridico' : 'emp_cobranca';
-  }
   if (nota.dataCartorio) {
     return daysSince(nota.dataCartorio) >= dp ? 'protestado' : 'enviado_cartorio';
   }
@@ -1504,7 +1496,7 @@ document.querySelectorAll('#nav-links a').forEach(a => a.addEventListener('click
 
 function updateTopbar() {
   document.getElementById('topbar-date').textContent = new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
-  const urg = DB.notas.filter(n => ['aguardando_cartorio','enviar_juridico'].includes(calcStatus(n))).length;
+  const urg = DB.notas.filter(n => ['aguardando_cartorio'].includes(calcStatus(n))).length;
   document.getElementById('topbar-alerts').textContent = urg > 0 ? `⚠️ ${urg} ação(ões) necessária(s)` : '';
   const tuEl = document.getElementById('topbar-user');
   if (_currentUser) {
@@ -1539,8 +1531,8 @@ function renderDashboard() {
   let totalEmitido=0, totalVencido=0, totalPago=0;
   const aging = {'1-15':0,'16-30':0,'31-60':0,'61-90':0,'91-120':0,'120+':0};
   const agingVal = {'1-15':0,'16-30':0,'31-60':0,'61-90':0,'91-120':0,'120+':0};
-  let flagCart=0, flagEmp=0, flagJur=0, flagProt=0, flagCobAv=0, flagEnvCart=0;
-  let valCart=0, valCobAv=0, valAguardCart=0, valEmp=0, valJur=0;
+  let flagCart=0, flagJur=0, flagProt=0, flagCobAv=0, flagEnvCart=0;
+  let valCart=0, valCobAv=0, valAguardCart=0, valJur=0;
 
   notas.forEach(n => {
     const v = Number(n.valor||0);
@@ -1551,7 +1543,6 @@ function renderDashboard() {
     if (s === 'aguardando_cartorio') { flagCart++; valAguardCart += Number(n.valor||0); }
     if (s === 'enviado_cartorio') { flagEnvCart++; valCart += Number(n.valor||0); }
     if (s === 'protestado') { flagProt++; valCart += Number(n.valor||0); }
-    if (s === 'emp_cobranca' || s === 'enviar_juridico') { flagEmp += (s==='enviar_juridico'?1:0); valEmp += Number(n.valor||0); }
     if (s === 'juridico') { flagJur++; valJur += Number(n.valor||0); }
     const d = diasAtraso(n.vencimento);
     if (d > 0 && s !== 'reprogramado') {
@@ -1687,7 +1678,6 @@ function renderDashboard() {
       </div>`);
     }
   }
-  if (flagEmp>0) alertas.push(`<div class="alert alert-danger">🏢 <b>${flagEmp}</b> nota(s) prontas para Jurídico (15 dias em Emp. Cobrança) — <a href="#" onclick="navigate('vencidos');return false">Ver lista</a></div>`);
 
   // ---- Mapa de Tratativas ----
   const notasVencidasAtivas = notas.filter(n => {
@@ -2328,8 +2318,7 @@ function buildActionBtns(n, s) {
     }
   }
   if (s==='aguardando_cartorio') r.push(`<button class="flag-btn" style="background:#fce7f3;color:#9d174d" onclick="flagCartorio('${id}')">⚖️ Enviar Cartório</button>`);
-  if (s==='protestado') r.push(`<button class="flag-btn" style="background:#fdf4ff;color:#7e22ce" onclick="flagEmpCob('${id}')">🏢 Emp. Cobrança</button>`);
-  if (s==='enviar_juridico') r.push(`<button class="flag-btn" style="background:#fee2e2;color:#7f1d1d" onclick="flagJuridico('${id}')">⚖️ Enviar Jurídico</button>`);
+  if (s==='protestado') r.push(`<button class="flag-btn" style="background:#fee2e2;color:#7f1d1d" onclick="flagJuridico('${id}')">⚖️ Enviar p/ Jurídico</button>`);
   if (!['pago','perdido'].includes(s)) {
     r.push(`<button class="flag-btn" style="background:#dcfce7;color:#15803d" onclick="setBase('${id}','pago')">✅ Pago</button>`);
     if (s==='aguardar') r.push(`<button class="flag-btn" style="background:#e0f2fe;color:#075985" onclick="clearAguardar('${id}')">▶️ Retomar</button>`);
@@ -2617,8 +2606,7 @@ function openNotaForm(id) {
         <select id="nf-etapa" onchange="onEtapaChange()" style="font-size:13px">
           <option value="auto">🔄 Automático — sistema calcula pelo vencimento</option>
           <optgroup label="— Etapas com data de ocorrência —">
-            <option value="cartorio" ${n.dataCartorio&&!n.dataEmpCob&&!n.dataJuridico?'selected':''}>⚖️ Enviado ao Cartório</option>
-            <option value="empcob"   ${n.dataEmpCob&&!n.dataJuridico?'selected':''}>🏢 Empresa de Cobrança</option>
+            <option value="cartorio" ${n.dataCartorio&&!n.dataJuridico?'selected':''}>⚖️ Enviado ao Cartório</option>
             <option value="juridico" ${n.dataJuridico?'selected':''}>⚠️ Jurídico</option>
           </optgroup>
           <optgroup label="— Reprogramação de pagamento —">
@@ -2635,16 +2623,10 @@ function openNotaForm(id) {
         </select>
       </div>
 
-      <div class="form-group" id="nf-dt-cartorio-wrap" style="${n.dataCartorio&&!n.dataEmpCob&&!n.dataJuridico?'':'display:none'}">
+      <div class="form-group" id="nf-dt-cartorio-wrap" style="${n.dataCartorio&&!n.dataJuridico?'':'display:none'}">
         <label>Data que foi ao Cartório</label>
         <input type="date" id="nf-dt-cartorio" value="${n.dataCartorio||today()}">
         <span style="font-size:11px;color:var(--text-muted)">O sistema conta 16 dias a partir desta data para mudar para "Protestado"</span>
-      </div>
-
-      <div class="form-group" id="nf-dt-empcob-wrap" style="${n.dataEmpCob&&!n.dataJuridico?'':'display:none'}">
-        <label>Data de entrada na Empresa de Cobrança</label>
-        <input type="date" id="nf-dt-empcob" value="${n.dataEmpCob||today()}">
-        <span style="font-size:11px;color:var(--text-muted)">O sistema conta 15 dias a partir desta data para solicitar envio ao Jurídico</span>
       </div>
 
       <div class="form-group" id="nf-dt-juridico-wrap" style="${n.dataJuridico?'':'display:none'}">
@@ -2680,7 +2662,6 @@ function onEtapaChange() {
     if(el) el.style.display = visible ? '' : 'none';
   };
   show('nf-dt-cartorio-wrap',  v === 'cartorio');
-  show('nf-dt-empcob-wrap',    v === 'empcob');
   show('nf-dt-juridico-wrap',  v === 'juridico');
   show('nf-dt-pago-wrap',      v === 'pago');
   show('nf-dt-reprog-wrap',    v === 'reprogramar');
@@ -2700,7 +2681,6 @@ function saveNota(id) {
   // Derivar baseStatus e datas a partir da etapa selecionada
   let base         = null;
   let dataCartorio = null;
-  let dataEmpCob   = null;
   let dataJuridico = null;
   let dataPagamento= null;
 
@@ -2708,10 +2688,7 @@ function saveNota(id) {
   if (etapa === 'aguardar') { base = 'aguardar'; }
   if (etapa === 'perdido')  { base = 'perdido';  }
   if (etapa === 'cartorio') { dataCartorio = document.getElementById('nf-dt-cartorio')?.value || today(); }
-  if (etapa === 'empcob')   { dataCartorio = document.getElementById('nf-dt-cartorio')?.value || null;
-                               dataEmpCob   = document.getElementById('nf-dt-empcob')?.value   || today(); }
   if (etapa === 'juridico') { dataCartorio = document.getElementById('nf-dt-cartorio')?.value || null;
-                               dataEmpCob   = document.getElementById('nf-dt-empcob')?.value   || null;
                                dataJuridico = document.getElementById('nf-dt-juridico')?.value || today(); }
   if (etapa === 'reprogramar') {
     // Verificar se já foi reprogramado e está expirado → bloquear
@@ -2745,7 +2722,6 @@ function saveNota(id) {
       nf, cliente: cli, vendedor: vend, empresa: emp, emissao: emis, vencimento: venc, valor,
       baseStatus: base||null,
       dataCartorio: etapa==='auto' ? n.dataCartorio : dataCartorio,
-      dataEmpCob:   etapa==='auto' ? n.dataEmpCob   : dataEmpCob,
       dataJuridico: etapa==='auto' ? n.dataJuridico  : dataJuridico,
       dataPagamento: etapa==='pago' ? dataPagamento : n.dataPagamento,
       reprogramado: etapa==='reprogramar' ? true : (n.reprogramado||false),
@@ -2760,7 +2736,7 @@ function saveNota(id) {
     }
     const nova = {
       id: uid(), nf, cliente: cli, vendedor: vend, empresa: emp, emissao: emis, vencimento: venc,
-      valor, baseStatus: null, dataCartorio: null, dataEmpCob: null, dataJuridico: null,
+      valor, baseStatus: null, dataCartorio: null, dataJuridico: null,
       emTrativaCom,
       historico: [{ data: new Date().toISOString(), tipo: 'Lançamento Manual', desc: `Criado manualmente por operador` }]
     };
@@ -2857,8 +2833,6 @@ function gerarRelatorioIndicadores() {
   const cntAguardCart = ativos.filter(n=>calcStatus(n)==='aguardando_cartorio').length;
   const valProt       = ativos.filter(n=>['enviado_cartorio','protestado'].includes(calcStatus(n))).reduce((s,n)=>s+Number(n.valor||0),0);
   const cntProt       = ativos.filter(n=>['enviado_cartorio','protestado'].includes(calcStatus(n))).length;
-  const valEmp        = ativos.filter(n=>['emp_cobranca','enviar_juridico'].includes(calcStatus(n))).reduce((s,n)=>s+Number(n.valor||0),0);
-  const cntEmp        = ativos.filter(n=>['emp_cobranca','enviar_juridico'].includes(calcStatus(n))).length;
   const valJur        = ativos.filter(n=>calcStatus(n)==='juridico').reduce((s,n)=>s+Number(n.valor||0),0);
   const cntJur        = ativos.filter(n=>calcStatus(n)==='juridico').length;
 
@@ -2932,7 +2906,6 @@ function gerarRelatorioIndicadores() {
     ${kpiSm('#c2410c','Cob. Avançada',fmt(valCobAv),cntCobAv,pct(valCobAv))}
     ${kpiSm('#d97706','Aguard. Cartório',fmt(valAguardCart),cntAguardCart,pct(valAguardCart))}
     ${kpiSm('#7c3aed','Protestado',fmt(valProt),cntProt,pct(valProt))}
-    ${kpiSm('#0e7490','Emp. Cobrança',fmt(valEmp),cntEmp,pct(valEmp))}
     ${kpiSm('#7f1d1d','Jurídico',fmt(valJur),cntJur,pct(valJur))}
   </div>
 
@@ -3042,7 +3015,6 @@ function abrirKpiModal(tipo) {
     cobav:    { label:'Cobrança Avançada',icon:'🔔', color:'#c2410c', bg:'#fff7ed', text:'#7c2d12', sub:'Títulos em cobrança avançada (>30 dias)' },
     cartorio: { label:'Aguard. Cartório', icon:'⚖️', color:'#d97706', bg:'#fffbeb', text:'#92400e', sub:'Títulos aguardando envio ao Cartório' },
     protestado:{ label:'Protestado',      icon:'🏛️', color:'#7c3aed', bg:'#f5f3ff', text:'#5b21b6', sub:'Títulos enviados ao Cartório ou Protestados' },
-    empcob:   { label:'Emp. Cobrança',   icon:'🏢', color:'#0e7490', bg:'#ecfeff', text:'#164e63', sub:'Títulos em empresa de cobrança' },
     juridico: { label:'Jurídico',         icon:'⚠️', color:'#7f1d1d', bg:'#fef2f2', text:'#7f1d1d', sub:'Títulos em processo jurídico' },
   };
 
@@ -3056,7 +3028,6 @@ function abrirKpiModal(tipo) {
     cobav:     n => calcStatus(n)==='cobranca_avancada',
     cartorio:  n => calcStatus(n)==='aguardando_cartorio',
     protestado:n => ['enviado_cartorio','protestado'].includes(calcStatus(n)),
-    empcob:    n => ['emp_cobranca','enviar_juridico'].includes(calcStatus(n)),
     juridico:  n => calcStatus(n)==='juridico',
   };
 
@@ -3193,16 +3164,6 @@ function flagCartorio(id) {
   saveDB(); filterVencidos(); alert('✅ Atualizado para "Enviado p/ Cartório"');
 }
 
-function flagEmpCob(id) {
-  const n = DB.notas.find(x=>x.id===id); if(!n) return;
-  const dt = prompt('Confirmar envio à Empresa de Cobrança.\nData (AAAA-MM-DD):', today());
-  if (!dt) return;
-  n.dataEmpCob = dt;
-  n.emTrativaCom = 'Empresa de Cobrança';  // aparece no Mapa de Tratativas
-  addHist(n, 'Emp. Cobrança', `Enviado à Emp. Cobrança em ${dt}`);
-  saveDB(); filterVencidos(); alert('✅ Atualizado para "Emp. Cobrança"');
-}
-
 function flagJuridico(id) {
   const n = DB.notas.find(x=>x.id===id); if(!n) return;
   const dt = prompt('Confirmar envio ao Jurídico.\nData (AAAA-MM-DD):', today());
@@ -3239,7 +3200,6 @@ function exportVencidos() {
     'Data Pagamento':fmtDate(n.dataPagamento),
     Observação:n.obs||'',
     'Data Cartório':fmtDate(n.dataCartorio),
-    'Data Emp.Cob.':fmtDate(n.dataEmpCob),
     'Data Jurídico':fmtDate(n.dataJuridico)
   }));
   const ws=XLSX.utils.json_to_sheet(rows);
@@ -3276,7 +3236,6 @@ function openNotaModal(id) {
       <div class="row">
         <div class="field"><label>Status</label>${statusBadge(s)}</div>
         ${n.dataCartorio?`<div class="field"><label>Cartório</label><span>${fmtDate(n.dataCartorio)} (${daysSince(n.dataCartorio)}d)</span></div>`:''}
-        ${n.dataEmpCob?`<div class="field"><label>Emp. Cobrança</label><span>${fmtDate(n.dataEmpCob)} (${daysSince(n.dataEmpCob)}d)</span></div>`:''}
         ${n.dataJuridico?`<div class="field"><label>Jurídico</label><span>${fmtDate(n.dataJuridico)} (${daysSince(n.dataJuridico)}d)</span></div>`:''}
       </div>
     </div>
@@ -3294,8 +3253,7 @@ function buildActionBtnsModal(n,s) {
   if (false) { // E-mail e WhatsApp individuais removidos — envio em massa pelo Dashboard
   }
   if(s==='aguardando_cartorio') r.push(`<button class="btn btn-sm" style="background:#fce7f3;color:#9d174d" onclick="flagCartorio('${id}');closeModal()">⚖️ Enviar ao Cartório</button>`);
-  if(s==='protestado') r.push(`<button class="btn btn-sm" style="background:#fdf4ff;color:#7e22ce" onclick="flagEmpCob('${id}');closeModal()">🏢 Emp. Cobrança</button>`);
-  if(s==='enviar_juridico') r.push(`<button class="btn btn-sm" style="background:#fee2e2;color:#7f1d1d" onclick="flagJuridico('${id}');closeModal()">⚖️ Jurídico</button>`);
+  if(s==='protestado') r.push(`<button class="btn btn-sm" style="background:#fee2e2;color:#7f1d1d" onclick="flagJuridico('${id}');closeModal()">⚖️ Enviar p/ Jurídico</button>`);
   if(!['pago','perdido'].includes(s)){
     r.push(`<button class="btn btn-sm" style="background:#dcfce7;color:#15803d" onclick="setBase('${id}','pago');closeModal()">✅ Pago</button>`);
     if(s==='aguardar') r.push(`<button class="btn btn-sm" style="background:#e0f2fe;color:#075985" onclick="clearAguardar('${id}');closeModal()">▶️ Retomar</button>`);
@@ -4085,11 +4043,6 @@ function analisarImport(){
     'cartório': 'cartorio', 'cartorio': 'cartorio',
     // Protestado
     'protestado': 'protestado',
-    // Emp. Cobrança
-    'emp. cobrança': 'empcob', 'emp. cobranca': 'empcob',
-    'empresa de cobrança': 'empcob', 'empresa de cobranca': 'empcob',
-    // Enviar p/ Jurídico
-    'enviar p/ jurídico': 'envirajur', 'enviar p/ juridico': 'envirajur',
     // Jurídico
     'jurídico': 'juridico', 'juridico': 'juridico',
     // Finais
@@ -4703,8 +4656,8 @@ function execImportFinal(){
   function resolverStatusImport(statusStr) {
     const key = (statusStr||'').toLowerCase().trim();
     const mapped = STATUS_IMPORT_VALIDOS[key];
-    // mapped = null (auto) | 'cartorio' | 'protestado' | 'empcob' | 'envirajur' | 'juridico' | 'pago' | 'aguardar' | 'perdido'
-    let baseStatus=null, dataCartorio=null, dataEmpCob=null, dataJuridico=null;
+    // mapped = null (auto) | 'cartorio' | 'protestado' | 'juridico' | 'pago' | 'aguardar' | 'perdido'
+    let baseStatus=null, dataCartorio=null, dataJuridico=null;
     if (mapped === 'cartorio') {
       dataCartorio = today();
     }
@@ -4714,20 +4667,11 @@ function execImportFinal(){
       const d = new Date(); d.setDate(d.getDate() - (dp + 1));
       dataCartorio = d.toISOString().slice(0,10);
     }
-    if (mapped === 'empcob') {
-      dataEmpCob = today();
-    }
-    if (mapped === 'envirajur') {
-      // Seta dataEmpCob no passado para a máquina calcular 'enviar_juridico'
-      const dj = Number(DB.config.diasJuridico || 15);
-      const d = new Date(); d.setDate(d.getDate() - (dj + 1));
-      dataEmpCob = d.toISOString().slice(0,10);
-    }
     if (mapped === 'juridico')  { dataJuridico = today(); }
     if (mapped === 'pago')      { baseStatus   = 'pago'; }
     if (mapped === 'aguardar')  { baseStatus   = 'aguardar'; }
     if (mapped === 'perdido')   { baseStatus   = 'perdido'; }
-    return { baseStatus, dataCartorio, dataEmpCob, dataJuridico };
+    return { baseStatus, dataCartorio, dataJuridico };
   }
 
   parsed.forEach(r=>{
@@ -5008,12 +4952,6 @@ function renderParametros(){
             style="width:100%;border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:14px">
           <span style="font-size:11px;color:var(--text-muted)">Padrão: 16 dias. Após envio ao Cartório</span>
         </div>
-        <div class="form-group" style="margin:0">
-          <label>Dias em Emp. Cobrança p/ Jurídico</label>
-          <input type="number" id="cfg-diasJuridico" min="1" max="120" value="${Number(cfg.diasJuridico||15)}"
-            style="width:100%;border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:14px">
-          <span style="font-size:11px;color:var(--text-muted)">Padrão: 15 dias. Após flag Emp. Cobrança</span>
-        </div>
       </div>
       <div class="form-actions" style="margin-top:14px">
         <button class="btn btn-primary" onclick="salvarRegras()">💾 Salvar Regras de Dias</button>
@@ -5073,8 +5011,6 @@ function renderParametros(){
           <tr style="background:#fef2f2"><td>${statusBadge('aguardando_cartorio')}</td><td>${Number(cfg.diasFimAvancada||6)+1}+ dias</td><td>—</td><td class="text-center"><b>Sim — sempre manual</b></td></tr>
           <tr><td>${statusBadge('enviado_cartorio')}</td><td>Após flag Cartório</td><td>Contador ${Number(cfg.diasProtestado||16)} dias</td><td class="text-center">—</td></tr>
           <tr style="background:#fef2f2"><td>${statusBadge('protestado')}</td><td>${Number(cfg.diasProtestado||16)}d após Cartório</td><td>Alerta dashboard</td><td class="text-center"><b>Sim — sempre manual</b></td></tr>
-          <tr><td>${statusBadge('emp_cobranca')}</td><td>Após flag Emp. Cob.</td><td>Contador ${Number(cfg.diasJuridico||15)} dias</td><td class="text-center">—</td></tr>
-          <tr style="background:#fef2f2"><td>${statusBadge('enviar_juridico')}</td><td>${Number(cfg.diasJuridico||15)}d em Emp. Cob.</td><td>Alerta dashboard</td><td class="text-center"><b>Sim — sempre manual</b></td></tr>
           <tr><td>${statusBadge('juridico')}</td><td>Após flag Jurídico</td><td>SLA iniciado</td><td class="text-center">—</td></tr>
         </tbody>
       </table>
@@ -5416,12 +5352,10 @@ function salvarRegras(){
   const ds = parseInt(document.getElementById('cfg-diasFimSimples').value)||3;
   const da = parseInt(document.getElementById('cfg-diasFimAvancada').value)||6;
   const dp = parseInt(document.getElementById('cfg-diasProtestado').value)||16;
-  const dj = parseInt(document.getElementById('cfg-diasJuridico').value)||15;
   if(da <= ds){ alert('O limite de Cobrança Avançada deve ser maior que o limite de Cobrança Simples.'); return; }
   DB.config.diasFimSimples  = ds;
   DB.config.diasFimAvancada = da;
   DB.config.diasProtestado  = dp;
-  DB.config.diasJuridico    = dj;
   saveDB();
   renderParametros();
   alert('✅ Regras de dias salvas com sucesso!');
