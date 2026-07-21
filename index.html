@@ -725,16 +725,15 @@ async function initUserSession(account) {
   // Super Admin permanente — sempre acesso total independente das listas
   if (isSuperAdmin(email)) {
     _currentUser = { email, name: account.name || account.username, role: 'admin' };
-  } else if (!todasListas) {
-    _currentUser = { email, name: account.name || account.username, role: 'admin' };
   } else if (admins.includes(email)) {
-    _currentUser = { email, name: account.name || account.username, role: 'admin' };
-  } else if (admins.length === 0 && gestores.includes(email)) {
     _currentUser = { email, name: account.name || account.username, role: 'admin' };
   } else if (gestores.includes(email)) {
     _currentUser = { email, name: account.name || account.username, role: 'gestor' };
   } else if (consulta.includes(email)) {
     _currentUser = { email, name: account.name || account.username, role: 'consulta' };
+  } else if (!todasListas) {
+    // Nenhuma lista configurada ainda — modo setup inicial, permite acesso como admin
+    _currentUser = { email, name: account.name || account.username, role: 'admin' };
   } else {
     // Usuário não autorizado
     if (loginMsg) loginMsg.textContent = '❌ Acesso não autorizado. Entre em contato com o administrador.';
