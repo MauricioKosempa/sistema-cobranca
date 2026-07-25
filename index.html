@@ -474,6 +474,140 @@ function fmtKpi(v) {
 function fmtDate(d) { if (!d) return '—'; return new Date(d+'T00:00:00').toLocaleDateString('pt-BR'); }
 function today() { return new Date().toISOString().split('T')[0]; }
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+
+// ── IndexedDB para anexos ─────────────────────────────────────────────────────
+let _idb = null;
+function initIDB() {
+  return new Promise((res, rej) => {
+    if (_idb) return res(_idb);
+    const req = indexedDB.open('reconlog_files', 1);
+    req.onupgradeneeded = e => { e.target.result.createObjectStore('anexos'); };
+    req.onsuccess = e => { _idb = e.target.result; res(_idb); };
+    req.onerror = e => rej(e);
+  });
+}
+function idbSave(id, blob) {
+  return initIDB().then(db => new Promise((res, rej) => {
+    const tx = db.transaction('anexos','readwrite');
+    tx.objectStore('anexos').put(blob, id);
+    tx.oncomplete = res; tx.onerror = rej;
+  }));
+}
+function idbGet(id) {
+  return initIDB().then(db => new Promise((res, rej) => {
+    const tx = db.transaction('anexos','readonly');
+    const req = tx.objectStore('anexos').get(id);
+    req.onsuccess = () => res(req.result); req.onerror = rej;
+  }));
+}
+function idbDel(id) {
+  return initIDB().then(db => new Promise((res, rej) => {
+    const tx = db.transaction('anexos','readwrite');
+    tx.objectStore('anexos').delete(id);
+    tx.oncomplete = res; tx.onerror = rej;
+  }));
+}
+
+// ── Helpers de anexos ─────────────────────────────────────────────────────────
+function _fileIcon(mime) {
+  if (!mime) return '📄';
+  if (mime.includes('pdf'))   return '📕';
+  if (mime.includes('word') || mime.includes('doc')) return '📝';
+  if (mime.includes('sheet') || mime.includes('excel') || mime.includes('xls')) return '📊';
+  if (mime.includes('image')) return '🖼️';
+  if (mime.includes('text'))  return '📃';
+  return '📄';
+}
+function _fmtBytes(b) {
+  if (!b) return '';
+  if (b < 1024) return b + ' B';
+  if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
+  return (b/1048576).toFixed(1) + ' MB';
+}
+function _renderAnexosList(anexos, tipo, refId) {
+  if (!anexos || !anexos.length)
+    return '<p style="color:#94a3b8;font-size:13px;padding:8px 0">Nenhum arquivo anexado.</p>';
+  return '<div style="display:flex;flex-direction:column;gap:8px">' +
+    anexos.map(a => `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:22px">${_fileIcon(a.tipo)}</span>
+          <div>
+            <div style="font-size:13px;font-weight:600;color:#1e293b">${a.nome}</div>
+            <div style="font-size:11px;color:#94a3b8">${_fmtBytes(a.tamanho)} · ${fmtDate(a.data)}</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-ghost btn-xs" onclick="downloadAnexo('${a.id}','${a.nome.replace(/'/g,'&#39;')}','${a.tipo||''}')">⬇️ Baixar</button>
+          <button class="btn btn-ghost btn-xs" style="color:#dc2626" onclick="delAnexo('${tipo}','${refId}','${a.id}')">🗑️</button>
+        </div>
+      </div>`).join('') + '</div>';
+}
+function _getAnexosObj(tipo, refId) {
+  return tipo === 'cliente'
+    ? DB.clientes.find(x => x.id === refId)
+    : DB.notas.find(x => x.id === refId);
+}
+
+function openAnexosModal(tipo, refId) {
+  const obj = _getAnexosObj(tipo, refId);
+  if (!obj) return;
+  if (!obj.anexos) obj.anexos = [];
+  const label = tipo === 'cliente' ? obj.nome : ('NF ' + (obj.nf || '') + ' — ' + (obj.cliente || ''));
+  openModal(`
+    <h2>📎 Anexos — ${label}</h2>
+    <div id="anx-list" style="margin-bottom:16px">${_renderAnexosList(obj.anexos, tipo, refId)}</div>
+    <div style="padding-top:16px;border-top:1px solid var(--border)">
+      <label style="font-weight:600;font-size:13px;display:block;margin-bottom:8px">Adicionar arquivo</label>
+      <input type="file" id="anx-file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.txt,.zip" style="font-size:13px;display:block;margin-bottom:10px">
+      <div id="anx-progress" style="display:none;font-size:12px;color:#3b82f6;margin-bottom:8px">⏳ Enviando…</div>
+      <button class="btn btn-primary btn-sm" onclick="uploadAnexo('${tipo}','${refId}')">📤 Enviar</button>
+    </div>`);
+}
+
+async function uploadAnexo(tipo, refId) {
+  const input = document.getElementById('anx-file');
+  if (!input || !input.files.length) { alert('Selecione ao menos um arquivo.'); return; }
+  const obj = _getAnexosObj(tipo, refId);
+  if (!obj) return;
+  if (!obj.anexos) obj.anexos = [];
+  const prog = document.getElementById('anx-progress');
+  const btn  = input.nextElementSibling && input.nextElementSibling.nextElementSibling;
+  if (prog) prog.style.display = '';
+  if (btn)  btn.disabled = true;
+  for (const file of input.files) {
+    const id = uid();
+    await idbSave(id, file);
+    obj.anexos.push({ id, nome: file.name, tipo: file.type, tamanho: file.size, data: today() });
+  }
+  saveDB();
+  if (prog) prog.style.display = 'none';
+  if (btn)  btn.disabled = false;
+  input.value = '';
+  const listEl = document.getElementById('anx-list');
+  if (listEl) listEl.innerHTML = _renderAnexosList(obj.anexos, tipo, refId);
+}
+
+async function downloadAnexo(id, nome, tipo) {
+  const blob = await idbGet(id);
+  if (!blob) { alert('Arquivo não encontrado no dispositivo.\nAnexos ficam armazenados localmente — se você trocou de máquina ou navegador o arquivo não está disponível.'); return; }
+  const url = URL.createObjectURL(blob instanceof Blob ? blob : new Blob([blob], {type: tipo||'application/octet-stream'}));
+  const a = document.createElement('a');
+  a.href = url; a.download = nome; document.body.appendChild(a); a.click();
+  document.body.removeChild(a); setTimeout(() => URL.revokeObjectURL(url), 3000);
+}
+
+async function delAnexo(tipo, refId, id) {
+  if (!confirm('Remover este anexo permanentemente?')) return;
+  const obj = _getAnexosObj(tipo, refId);
+  if (!obj) return;
+  obj.anexos = (obj.anexos || []).filter(a => a.id !== id);
+  await idbDel(id);
+  saveDB();
+  const listEl = document.getElementById('anx-list');
+  if (listEl) listEl.innerHTML = _renderAnexosList(obj.anexos, tipo, refId);
+}
+
 function getCliente(nome) { return DB.clientes.find(c => c.nome === nome) || null; }
 function getEmailsCliente(cli) {
   const emails = [];
@@ -2275,7 +2409,7 @@ function filterVencidos() {
           </select>
         </div>
       </td>
-      <td><div class="gap-8">${buildActionBtns(n,s)}<button class="btn btn-ghost btn-xs" title="Ver detalhes" onclick="openNotaModal('${n.id}')">📋</button><button class="btn btn-ghost btn-xs" title="Editar lançamento" onclick="openNotaForm('${n.id}')">✏️</button><button class="btn btn-ghost btn-xs" title="Excluir lançamento" onclick="excluirNota('${n.id}')" style="color:var(--danger)">🗑️</button></div></td>
+      <td><div class="gap-8">${buildActionBtns(n,s)}<button class="btn btn-ghost btn-xs" title="Anexos (${(n.anexos||[]).length})" onclick="openAnexosModal('nota','${n.id}')">📎${(n.anexos||[]).length>0?`<span style="background:#3b82f6;color:#fff;font-size:10px;font-weight:700;padding:1px 4px;border-radius:10px;margin-left:2px">${(n.anexos||[]).length}</span>`:''}</button><button class="btn btn-ghost btn-xs" title="Ver detalhes" onclick="openNotaModal('${n.id}')">📋</button><button class="btn btn-ghost btn-xs" title="Editar lançamento" onclick="openNotaForm('${n.id}')">✏️</button><button class="btn btn-ghost btn-xs" title="Excluir lançamento" onclick="excluirNota('${n.id}')" style="color:var(--danger)">🗑️</button></div></td>
     </tr>`;
   }).join('');
 
@@ -3840,6 +3974,7 @@ function renderClientes() {
     <td>${c.vend1||'—'}</td>
     <td><span class="chip" style="background:${c.situacao==='Inativo'?'#f1f5f9':'#dcfce7'};color:${c.situacao==='Inativo'?'#475569':'#15803d'}">${c.situacao||'Ativo'}</span></td>
     <td class="gap-8">
+      <button class="btn btn-ghost btn-xs" title="Anexos (${(c.anexos||[]).length})" onclick="openAnexosModal('cliente','${c.id}')">📎${(c.anexos||[]).length>0?` <span style="background:#3b82f6;color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:10px">${(c.anexos||[]).length}</span>`:''}</button>
       <button class="btn btn-ghost btn-xs" onclick="editCliente('${c.id}')">✏️</button>
       <button class="btn btn-ghost btn-xs" onclick="delCliente('${c.id}')">🗑️</button>
     </td></tr>`;
