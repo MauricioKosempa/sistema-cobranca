@@ -3641,16 +3641,16 @@ async function baixarPlanilhaRecebimentos() {
   wb.creator  = 'Sistema de Cobrança Reconlog';
   wb.created  = new Date();
 
-  // ── Aba oculta Listas ────────────────────────────────────────
+  // ── Aba principal PRIMEIRO (SheetNames[0] = lida pelo importador) ───
+  const ws = wb.addWorksheet('Recebimentos', { views: [{ state:'frozen', ySplit:3, topLeftCell:'A4' }] });
+
+  // ── Aba oculta Listas (segunda) ───────────────────────────────
   const wsL = wb.addWorksheet('Listas');
   wsL.state = 'hidden';
   const maxR = Math.max(empresas.length, statusOpts.length, trataOpts.length, vendedores.length);
   for (let i=0; i<maxR; i++) {
     wsL.addRow([empresas[i]||'', statusOpts[i]||'', trataOpts[i]||'', vendedores[i]||'']);
   }
-
-  // ── Aba principal ─────────────────────────────────────────────
-  const ws = wb.addWorksheet('Recebimentos', { views: [{ state:'frozen', ySplit:3, topLeftCell:'A4' }] });
   ws.columns = [
     { key:'nf',    width:16 }, { key:'cli',   width:32 }, { key:'venc',  width:24 },
     { key:'valor', width:18 }, { key:'emp',   width:24 }, { key:'status',width:22 },
