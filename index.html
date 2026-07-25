@@ -3877,13 +3877,16 @@ function confirmarImportClientes() {
 ============================================================ */
 function renderImportar(){
   const statusRows = [
-    {label:'Automático',      cor:'#dbeafe',txt:'#1e40af', desc:'Deixe em branco ou use "Automático" — o sistema calcula pela data de vencimento (A Vencer → Cobrança Simples → Cobrança Avançada → Aguardando Cartório)'},
-    {label:'Enviado p/ Cartório', cor:'#fef9c3',txt:'#854d0e', desc:'NF enviada ao cartório. Protestado é calculado automaticamente após 16 dias.'},
-    {label:'Emp. Cobrança',   cor:'#fee2e2',txt:'#991b1b', desc:'NF em empresa de cobrança terceirizada.'},
-    {label:'Jurídico',        cor:'#f3e8ff',txt:'#6b21a8', desc:'NF em processo jurídico.'},
-    {label:'Pago',            cor:'#dcfce7',txt:'#166534', desc:'Título pago/liquidado. Não pode ser sobrescrito após importado.'},
-    {label:'Aguardar',        cor:'#f1f5f9',txt:'#475569', desc:'Cobrança pausada temporariamente.'},
-    {label:'Perdido',         cor:'#f1f5f9',txt:'#475569', desc:'Incobrável / cancelado.'},
+    {label:'Automático',          cor:'#dbeafe',txt:'#1e40af', desc:'Deixe em branco ou use "Automático" — o sistema calcula pela data de vencimento (A Vencer → Cobrança Simples → Cobrança Avançada → Aguardando Cartório)'},
+    {label:'Cobrança Simples',    cor:'#fef9c3',txt:'#a16207', desc:'Título vencido em cobrança simples. Status preservado exatamente como informado.'},
+    {label:'Cobrança Avançada',   cor:'#ffedd5',txt:'#c2410c', desc:'Título vencido em cobrança avançada. Status preservado exatamente como informado.'},
+    {label:'Aguardando Cartório', cor:'#fee2e2',txt:'#b91c1c', desc:'Título aguardando envio ao cartório. Status preservado exatamente como informado.'},
+    {label:'Enviado p/ Cartório', cor:'#fce7f3',txt:'#9d174d', desc:'NF enviada ao cartório. "Protestado" é calculado automaticamente após 16 dias da data de envio.'},
+    {label:'Protestado',          cor:'#ede9fe',txt:'#6d28d9', desc:'NF já protestada em cartório.'},
+    {label:'Jurídico',            cor:'#1e293b',txt:'#f1f5f9', desc:'NF em processo jurídico.'},
+    {label:'Pago',                cor:'#dcfce7',txt:'#166534', desc:'Título pago/liquidado. Não pode ser sobrescrito após importado.'},
+    {label:'Aguardar',            cor:'#e0f2fe',txt:'#075985', desc:'Cobrança pausada temporariamente.'},
+    {label:'Perdido',             cor:'#f1f5f9',txt:'#475569', desc:'Incobrável / cancelado.'},
   ].map(s=>`<tr>
     <td><span style="background:${s.cor};color:${s.txt};font-weight:700;padding:2px 10px;border-radius:10px;font-size:11px;white-space:nowrap">${s.label}</span></td>
     <td style="font-size:12px;color:var(--text-muted)">${s.desc}</td>
@@ -4085,15 +4088,19 @@ function analisarImport(){
     'aguardando cartório': 'aguardando_cartorio', 'aguardando cartorio': 'aguardando_cartorio',
     // Cartório
     'enviado p/ cartório': 'cartorio', 'enviado p/ cartorio': 'cartorio',
+    'enviado ao cartório': 'cartorio', 'enviado ao cartorio': 'cartorio',
+    'em cartório': 'cartorio', 'em cartorio': 'cartorio',
     'cartório': 'cartorio', 'cartorio': 'cartorio',
     // Protestado
-    'protestado': 'protestado',
+    'protestado': 'protestado', 'protesto': 'protestado',
     // Jurídico
     'jurídico': 'juridico', 'juridico': 'juridico',
+    'juridico rl': 'juridico', 'jurídico rl': 'juridico',
+    'processo judicial': 'juridico',
     // Finais
-    'pago': 'pago',
-    'aguardar': 'aguardar',
-    'perdido': 'perdido', 'incobrável': 'perdido', 'incobrave': 'perdido',
+    'pago': 'pago', 'liquidado': 'pago', 'quitado': 'pago',
+    'aguardar': 'aguardar', 'pausado': 'aguardar',
+    'perdido': 'perdido', 'incobrável': 'perdido', 'incobrave': 'perdido', 'cancelado': 'perdido',
   };
   const statusInvalidos = [];
   const statusSugestoes = [];
