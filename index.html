@@ -3671,7 +3671,24 @@ function openCliForm(id){
     <div class="form-actions">
       <button class="btn btn-primary" onclick="saveCli('${id||''}')">💾 Salvar</button>
       <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
-    </div>`);
+    </div>
+    ${id ? `
+    <hr style="margin:16px 0;border:none;border-top:1px solid var(--border)">
+    <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:14px 16px">
+      <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#9a3412;margin-bottom:6px">🔀 MESCLAR CADASTRO DUPLICADO</div>
+      <p style="font-size:12px;color:#9a3412;margin:0 0 10px">Se este cliente está duplicado, selecione o cadastro que deve ser <b>absorvido</b> (excluído). Todos os lançamentos e vínculos do cadastro selecionado serão transferidos para <b>${c.nome}</b> e o duplicado será removido.</p>
+      <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px">Cadastro duplicado a remover</label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <select id="cf-mesclar" style="flex:1;border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-size:13px">
+          <option value="">— Selecione o duplicado —</option>
+          ${[...DB.clientes].sort((a,b)=>(a.nome||'').localeCompare(b.nome||'','pt-BR',{sensitivity:'base'})).filter(x=>x.id!==id).map(x=>{
+            const qtd=DB.notas.filter(n=>n.cliente===x.nome).length;
+            return \`<option value="\${x.id}">\${x.nome}\${qtd>0?\` (\${qtd} lançamentos)\`:''}</option>\`;
+          }).join('')}
+        </select>
+        <button class="btn btn-danger btn-sm" onclick="mesclarCliente('${id}')">🔀 Mesclar</button>
+      </div>
+    </div>` : ''}`);
 }
 function editCliente(id){openCliForm(id);}
 function saveCli(id){
@@ -3699,6 +3716,25 @@ function delCliente(id){
   if(!confirm(`Excluir o cliente "${c.nome}"?`))return;
   DB.clientes=DB.clientes.filter(x=>x.id!==id);
   saveDB();renderClientes();
+}
+
+function mesclarCliente(idPrincipal){
+  const idDup=document.getElementById('cf-mesclar')?.value;
+  if(!idDup){alert('Selecione o cadastro duplicado a remover.');return;}
+  const principal=DB.clientes.find(x=>x.id===idPrincipal);
+  const duplicado=DB.clientes.find(x=>x.id===idDup);
+  if(!principal||!duplicado)return;
+  const qtdNotas=DB.notas.filter(n=>n.cliente===duplicado.nome).length;
+  const qtdCrm=(DB.crm||[]).filter(c=>c.cliente===duplicado.nome).length;
+  if(!confirm(`Mesclar "${duplicado.nome}" em "${principal.nome}"?\n\n• ${qtdNotas} lançamento(s) serão transferidos\n• ${qtdCrm} registro(s) de CRM serão atualizados\n• O cadastro "${duplicado.nome}" será excluído\n\nEsta ação não pode ser desfeita.`))return;
+  // Transfere lançamentos
+  DB.notas.forEach(n=>{if(n.cliente===duplicado.nome)n.cliente=principal.nome;});
+  // Transfere histórico CRM
+  (DB.crm||[]).forEach(c=>{if(c.cliente===duplicado.nome)c.cliente=principal.nome;});
+  // Remove o duplicado
+  DB.clientes=DB.clientes.filter(x=>x.id!==idDup);
+  saveDB();closeModal();renderClientes();
+  alert(`✅ Mesclagem concluída!\n• ${qtdNotas} lançamento(s) transferido(s)\n• ${qtdCrm} CRM atualizado(s)\n• "${duplicado.nome}" removido`);
 }
 
 /* ============================================================
