@@ -438,6 +438,10 @@ function calcStatus(nota) {
   if (nota.dataCartorio) {
     return daysSince(nota.dataCartorio) >= dp ? 'protestado' : 'enviado_cartorio';
   }
+  // Status travado via importação (sobrepõe o cálculo automático por dias)
+  if (nota.baseStatus === 'cobranca_simples')    return 'cobranca_simples';
+  if (nota.baseStatus === 'cobranca_avancada')   return 'cobranca_avancada';
+  if (nota.baseStatus === 'aguardando_cartorio') return 'aguardando_cartorio';
   const d = diasAtraso(nota.vencimento);
   const ds = Number(DB.config.diasFimSimples || 3);
   const da = Number(DB.config.diasFimAvancada || 6);
@@ -2627,6 +2631,11 @@ function openNotaForm(id) {
         <label>Em qual etapa esta nota se encontra?</label>
         <select id="nf-etapa" onchange="onEtapaChange()" style="font-size:13px">
           <option value="auto">🔄 Automático — sistema calcula pelo vencimento</option>
+          <optgroup label="— Status fixado via importação —">
+            <option value="cobranca_simples"    ${n.baseStatus==='cobranca_simples'   ?'selected':''}>📋 Cobrança Simples (importado)</option>
+            <option value="cobranca_avancada"   ${n.baseStatus==='cobranca_avancada'  ?'selected':''}>📋 Cobrança Avançada (importado)</option>
+            <option value="aguardando_cartorio" ${n.baseStatus==='aguardando_cartorio'?'selected':''}>📋 Aguardando Cartório (importado)</option>
+          </optgroup>
           <optgroup label="— Etapas com data de ocorrência —">
             <option value="cartorio" ${n.dataCartorio&&!n.dataJuridico?'selected':''}>⚖️ Enviado ao Cartório</option>
             <option value="juridico" ${n.dataJuridico?'selected':''}>⚠️ Jurídico</option>
@@ -2709,6 +2718,9 @@ function saveNota(id) {
   if (etapa === 'pago')     { base = 'pago';     dataPagamento = document.getElementById('nf-dt-pago')?.value || today(); }
   if (etapa === 'aguardar') { base = 'aguardar'; }
   if (etapa === 'perdido')  { base = 'perdido';  }
+  if (etapa === 'cobranca_simples')    { base = 'cobranca_simples'; }
+  if (etapa === 'cobranca_avancada')   { base = 'cobranca_avancada'; }
+  if (etapa === 'aguardando_cartorio') { base = 'aguardando_cartorio'; }
   if (etapa === 'cartorio') { dataCartorio = document.getElementById('nf-dt-cartorio')?.value || today(); }
   if (etapa === 'juridico') { dataCartorio = document.getElementById('nf-dt-cartorio')?.value || null;
                                dataJuridico = document.getElementById('nf-dt-juridico')?.value || today(); }
@@ -4064,12 +4076,13 @@ function analisarImport(){
   // ---- Validação de Status ----
   const STATUS_IMPORT_VALIDOS = {
     '': null, 'automático': null, 'automatico': null,
-    // Calculados automaticamente pela máquina de estados — aceita mas não força
+    // Auto (não força status)
     'a vencer': null,
-    'cobrança simples': null, 'cobranca simples': null,
-    'cobrança avançada': null, 'cobranca avancada': null,
-    'aguardando cartório': null, 'aguardando cartorio': null,
     '🔄 reprogramado': null, 'reprogramado': null,
+    // Travados — importados explicitamente, respeitados pelo sistema
+    'cobrança simples': 'cobranca_simples', 'cobranca simples': 'cobranca_simples',
+    'cobrança avançada': 'cobranca_avancada', 'cobranca avancada': 'cobranca_avancada',
+    'aguardando cartório': 'aguardando_cartorio', 'aguardando cartorio': 'aguardando_cartorio',
     // Cartório
     'enviado p/ cartório': 'cartorio', 'enviado p/ cartorio': 'cartorio',
     'cartório': 'cartorio', 'cartorio': 'cartorio',
@@ -4689,7 +4702,11 @@ function execImportFinal(){
     const key = (statusStr||'').toLowerCase().trim();
     const mapped = STATUS_IMPORT_VALIDOS[key];
     // mapped = null (auto) | 'cartorio' | 'protestado' | 'juridico' | 'pago' | 'aguardar' | 'perdido'
+    //        | 'cobranca_simples' | 'cobranca_avancada' | 'aguardando_cartorio'
     let baseStatus=null, dataCartorio=null, dataJuridico=null;
+    if (mapped === 'cobranca_simples')    { baseStatus = 'cobranca_simples'; }
+    if (mapped === 'cobranca_avancada')   { baseStatus = 'cobranca_avancada'; }
+    if (mapped === 'aguardando_cartorio') { baseStatus = 'aguardando_cartorio'; }
     if (mapped === 'cartorio') {
       dataCartorio = today();
     }
