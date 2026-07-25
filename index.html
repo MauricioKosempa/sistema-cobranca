@@ -3683,7 +3683,7 @@ function openCliForm(id){
           <option value="">— Selecione o duplicado —</option>
           ${[...DB.clientes].sort((a,b)=>(a.nome||'').localeCompare(b.nome||'','pt-BR',{sensitivity:'base'})).filter(x=>x.id!==id).map(x=>{
             const qtd=DB.notas.filter(n=>n.cliente===x.nome).length;
-            return \`<option value="\${x.id}">\${x.nome}\${qtd>0?\` (\${qtd} lançamentos)\`:''}</option>\`;
+            return '<option value="'+x.id+'">'+x.nome+(qtd>0?' ('+qtd+' lançamentos)':'')+'</option>';
           }).join('')}
         </select>
         <button class="btn btn-danger btn-sm" onclick="mesclarCliente('${id}')">🔀 Mesclar</button>
