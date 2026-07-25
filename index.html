@@ -2919,10 +2919,85 @@ function abrirMapaTratativas(areaKey) {
 }
 
 function gerarRelatorioIndicadores() {
+  const anos = [...new Set(DB.notas.map(n=>(n.vencimento||'').slice(0,4)).filter(a=>a&&!isNaN(a)))].sort((a,b)=>b-a);
+  const anosOpts = anos.map(a=>`<option value="${a}">${a}</option>`).join('');
+  const hoje = new Date();
+  const mesRef = new Date(hoje.getFullYear(), hoje.getMonth()-1, 1);
+  const anoRefStr  = String(mesRef.getFullYear());
+  const mesRefStr  = String(mesRef.getMonth()+1).padStart(2,'0');
+  const mesesOpts  = MESES.map((m,i)=>`<option value="${String(i+1).padStart(2,'0')}" ${String(i+1).padStart(2,'0')===mesRefStr?'selected':''}>${m}</option>`).join('');
+  const anosOptsMes = anos.map(a=>`<option value="${a}" ${a===anoRefStr?'selected':''}>${a}</option>`).join('');
+
+  openModal(`
+    <h2 style="margin-bottom:6px">📄 Gerar Relatório de Indicadores</h2>
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:18px">Selecione o período de análise</p>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px">
+      <label id="rp-lbl-total" style="display:flex;align-items:flex-start;gap:12px;padding:12px 14px;border:2px solid var(--primary-light);border-radius:8px;cursor:pointer;background:#eff6ff">
+        <input type="radio" name="rp" value="total" checked onchange="rpChange()" style="margin-top:3px">
+        <div><div style="font-weight:600">Total (toda a carteira)</div><div style="font-size:12px;color:var(--text-muted)">Todos os títulos sem filtro de período</div></div>
+      </label>
+      <label id="rp-lbl-ano" style="display:flex;align-items:flex-start;gap:12px;padding:12px 14px;border:2px solid var(--border);border-radius:8px;cursor:pointer">
+        <input type="radio" name="rp" value="ano" onchange="rpChange()" style="margin-top:3px">
+        <div style="flex:1">
+          <div style="font-weight:600">Por Ano</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px">Títulos com vencimento no ano selecionado</div>
+          <select id="rp-ano" style="padding:5px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px" onclick="document.querySelector('[name=rp][value=ano]').checked=true;rpChange()">${anosOpts}</select>
+        </div>
+      </label>
+      <label id="rp-lbl-mes" style="display:flex;align-items:flex-start;gap:12px;padding:12px 14px;border:2px solid var(--border);border-radius:8px;cursor:pointer">
+        <input type="radio" name="rp" value="mes" onchange="rpChange()" style="margin-top:3px">
+        <div style="flex:1">
+          <div style="font-weight:600">Mês Fechado</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px">Títulos com vencimento no mês selecionado</div>
+          <div style="display:flex;gap:8px">
+            <select id="rp-mes-m" style="padding:5px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px" onclick="document.querySelector('[name=rp][value=mes]').checked=true;rpChange()">${mesesOpts}</select>
+            <select id="rp-mes-a" style="padding:5px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px" onclick="document.querySelector('[name=rp][value=mes]').checked=true;rpChange()">${anosOptsMes}</select>
+          </div>
+        </div>
+      </label>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-primary" onclick="execRelatorio()">📄 Gerar Relatório</button>
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+    </div>
+  `);
+}
+
+function rpChange() {
+  const val = document.querySelector('input[name="rp"]:checked')?.value;
+  ['total','ano','mes'].forEach(k => {
+    const el = document.getElementById('rp-lbl-'+k);
+    if (!el) return;
+    el.style.borderColor = val===k ? 'var(--primary-light)' : 'var(--border)';
+    el.style.background  = val===k ? '#eff6ff' : '';
+  });
+}
+
+function execRelatorio() {
+  const tipo   = document.querySelector('input[name="rp"]:checked')?.value || 'total';
+  const ano    = tipo==='ano' ? (document.getElementById('rp-ano')?.value||'') : (document.getElementById('rp-mes-a')?.value||'');
+  const mes    = tipo==='mes' ? (document.getElementById('rp-mes-m')?.value||'') : '';
+  closeModal();
+  _execRelatorioIndicadores(tipo, ano, mes);
+}
+
+function _execRelatorioIndicadores(tipo, filtroAno, filtroMes) {
   const todasNotas = DB.notas;
-  const notas = _empresaFiltro ? todasNotas.filter(n => n.empresa === _empresaFiltro) : todasNotas;
+  let notasBase = _empresaFiltro ? todasNotas.filter(n => n.empresa === _empresaFiltro) : todasNotas;
+
+  // Filtro de período
+  if (tipo === 'ano' && filtroAno) {
+    notasBase = notasBase.filter(n => (n.vencimento||'').startsWith(filtroAno));
+  } else if (tipo === 'mes' && filtroAno && filtroMes) {
+    notasBase = notasBase.filter(n => (n.vencimento||'').startsWith(filtroAno+'-'+filtroMes));
+  }
+  const notas = notasBase;
+
   const empresa = _empresaFiltro ? _empresaFiltro : (DB.config.empresaNome || 'Reconlog');
-  const escopoLabel = _empresaFiltro ? `Empresa: ${_empresaFiltro}` : 'Consolidado — Todas as Empresas';
+  const periodoLabel = tipo==='mes'
+    ? `${MESES[parseInt(filtroMes)-1]}/${filtroAno}`
+    : tipo==='ano' ? `Ano ${filtroAno}` : 'Total — Toda a Carteira';
+  const escopoLabel = (_empresaFiltro ? `Empresa: ${_empresaFiltro} · ` : 'Consolidado — ') + periodoLabel;
   const data = new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'});
 
   const ativos = notas.filter(n => !['pago','perdido','reprogramado'].includes(calcStatus(n)) && diasAtraso(n.vencimento) > 0);
@@ -2930,22 +3005,28 @@ function gerarRelatorioIndicadores() {
   const totalVencido  = ativos.reduce((s,n)=>s+Number(n.valor||0),0);
   const totalPago     = pagos.reduce((s,n)=>s+Number(n.valor||0),0);
 
-  // Taxa do mês anterior (fechado) e do ano vigente — usa faturamento de Parâmetros como base
+  // Taxa de inadimplência — adapta conforme período selecionado
   const _hj = new Date();
-  const _mesRef = new Date(_hj.getFullYear(), _hj.getMonth() - 1, 1); // mês anterior
+  // Mês de referência: se filtro=mes → usa o mês filtrado; senão → mês anterior (fechado)
+  const _mesRef = (tipo === 'mes' && filtroAno && filtroMes)
+    ? new Date(parseInt(filtroAno), parseInt(filtroMes)-1, 1)
+    : new Date(_hj.getFullYear(), _hj.getMonth()-1, 1);
   const _ano = String(_mesRef.getFullYear());
   const _mes = String(_mesRef.getMonth()+1).padStart(2,'0');
   const _prefMes = _ano+'-'+_mes;
-  const _anoAtual = String(_hj.getFullYear()); // ano corrente para o card anual
+  // Ano de referência: se filtro=ano → usa o ano filtrado; senão → ano corrente
+  const _anoAtual = (tipo === 'ano' && filtroAno) ? filtroAno : String(_hj.getFullYear());
 
+  // Faturamento: busca sempre do DB completo (não filtrado por período de notas)
+  const _todasNotas = _empresaFiltro ? DB.notas.filter(n=>n.empresa===_empresaFiltro) : DB.notas;
   const _fatMes = _empresaFiltro
     ? Number((DB.faturamentoEmp?.[_empresaFiltro]?.[_ano]||{})[_mes]||0)
     : getMesFatTodas(_ano, _mes) || Number((DB.faturamento[_ano]||{})[_mes]||0);
   const _fatAno = _empresaFiltro ? getFatAnoEmp(_anoAtual, _empresaFiltro) : getFatConsolidado(_anoAtual);
 
-  const _notasMes = notas.filter(n=>(n.vencimento||'').startsWith(_prefMes));
+  const _notasMes = _todasNotas.filter(n=>(n.vencimento||'').startsWith(_prefMes));
   const _vencMes  = _notasMes.filter(n=>calcStatus(n)!=='pago'&&calcStatus(n)!=='perdido'&&diasAtraso(n.vencimento)>0).reduce((s,n)=>s+Number(n.valor||0),0);
-  const _notasAno = notas.filter(n=>(n.vencimento||'').startsWith(_anoAtual));
+  const _notasAno = _todasNotas.filter(n=>(n.vencimento||'').startsWith(_anoAtual));
   const _vencAno  = _notasAno.filter(n=>calcStatus(n)!=='pago'&&calcStatus(n)!=='perdido'&&diasAtraso(n.vencimento)>0).reduce((s,n)=>s+Number(n.valor||0),0);
 
   const _taxaMes = _fatMes > 0 ? ((_vencMes/_fatMes)*100).toFixed(1) : null;
