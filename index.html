@@ -3923,9 +3923,11 @@ function processFile(file){
     const raw=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
     let hi=0;
     for(let i=0;i<Math.min(raw.length,10);i++){if(raw[i].filter(c=>c!=='').length>=3){hi=i;break;}}
-    const headers=raw[hi].map(h=>String(h).toLowerCase().trim());
+    // Normaliza headers: remove *, quebras de linha, parênteses e espaços extras
+    const normH = h => String(h).toLowerCase().replace(/[\n\r*]/g,' ').replace(/\(.*?\)/g,' ').replace(/\s+/g,' ').trim();
+    const headers=raw[hi].map(h=>normH(h));
     const dataRows=raw.slice(hi+1).filter(r=>r.some(c=>c!==''));
-    const mappings={nf:['nf','nota','número','numero','num','nota fiscal'],cliente:['cliente','razão social','razao social','nome'],vencimento:['vencimento','venc','dt venc','data vencimento'],valor:['valor','vlr','valor total','total'],vendedor:['vendedor','rep','representante'],emissao:['emissão','emissao','emis','dt emissão','data emissão'],empresa:['empresa','filial','unidade','cia','companhia'],status:['status','situação','situacao','etapa'],emTrativaCom:['em tratativa','tratativa','pendencia','pendência','area responsavel','área responsável','responsavel','responsável']};
+    const mappings={nf:['nf','nota fiscal','nº nf','nota','número','numero','num'],cliente:['cliente','razão social','razao social','nome'],vencimento:['vencimento','venc','dt venc','data vencimento','data vcto','dt vcto'],valor:['valor da nota','valor','vlr','valor total','total'],vendedor:['vendedor','rep','representante'],emissao:['emissão','emissao','emis','dt emissão','data emissão','data emissao'],empresa:['empresa','filial','unidade','cia','companhia'],status:['status','situação','situacao','etapa'],emTrativaCom:['em tratativa','tratativa','pendencia','pendência','area responsavel','área responsável','responsavel','responsável']};
     const colMap={};
     Object.entries(mappings).forEach(([f,keys])=>{const idx=headers.findIndex(h=>keys.some(k=>h.includes(k)));if(idx>=0)colMap[f]=idx;});
     window._irows=dataRows; window._ihdrs=headers; window._importFileName=file.name;
