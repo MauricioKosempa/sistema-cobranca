@@ -7,6 +7,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.39.0/lib/msal-browser.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
 <style>
   :root {
     --sidebar-w: 220px;
@@ -2138,16 +2139,27 @@ function renderDashboard() {
         });
         return `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px;margin-bottom:20px">${cells.join('')}</div>`;
       })()}
-      ${(DB.historicoInadimplencia||[]).filter(h=>h.mes).length > 0 ? `
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:20px;margin-bottom:10px">
-          <span style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px">Gráfico de Fechamentos</span>
-          <div style="display:flex;gap:4px">
-            <button id="hbtn-timeline" onclick="switchHistMode('timeline')" style="font-size:11px;font-weight:600;padding:4px 14px;border-radius:6px;border:1px solid var(--border);cursor:pointer;background:#1e3a8a;color:#fff;transition:.15s">📅 Histórico</button>
-            <button id="hbtn-compare"  onclick="switchHistMode('compare')"  style="font-size:11px;font-weight:600;padding:4px 14px;border-radius:6px;border:1px solid var(--border);cursor:pointer;background:#fff;color:var(--text);transition:.15s">📊 Comparar por Ano</button>
+      ${(() => {
+        const _h = (DB.historicoInadimplencia||[]).filter(h=>h.mes);
+        if (!_h.length) return '';
+        const _anos = [...new Set(_h.map(h=>h.mes.slice(0,4)))].sort((a,b)=>b-a);
+        const _anoSel = _histAnoSel || _anos[0] || '';
+        const btnS = k => `font-size:11px;font-weight:600;padding:4px 14px;border-radius:6px;border:1px solid var(--border);cursor:pointer;background:${_histMode===k?'#1e3a8a':'#fff'};color:${_histMode===k?'#fff':'var(--text)'}`;
+        return `<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-top:20px;margin-bottom:12px">
+            <span style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px">Taxa de Inadimplência — Fechamentos</span>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <div style="display:flex;align-items:center;gap:6px">
+                <label style="font-size:12px;color:var(--text-muted);font-weight:600">Ano:</label>
+                <select onchange="switchHistMode(undefined,this.value)" style="border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:12px;font-weight:700;color:var(--text)">
+                  ${_anos.map(a=>`<option value="${a}" ${a===_anoSel?'selected':''}>${a}</option>`).join('')}
+                </select>
+              </div>
+              <button id="hbtn-ano"     onclick="switchHistMode('ano')"     style="${btnS('ano')}">📊 Por Ano</button>
+              <button id="hbtn-compare" onclick="switchHistMode('compare')" style="${btnS('compare')}">📅 Comparativo</button>
+            </div>
           </div>
-        </div>
-        <canvas id="chart-historico" height="80"></canvas>
-      ` : ''}
+          <canvas id="chart-historico" height="90"></canvas>`;
+      })()}
     </div>`;
   setTimeout(initDashboardCharts, 80);
 }
@@ -2157,18 +2169,23 @@ function toggleVendor(i) {
   document.getElementById(`vexp-${i}`).classList.toggle('open');
 }
 
-let _chartMensal = null, _chartHistorico = null, _histMode = 'timeline';
+let _chartMensal = null, _chartHistorico = null, _histMode = 'ano', _histAnoSel = '';
 
-function switchHistMode(m) {
-  _histMode = m;
-  // atualiza botões sem re-renderizar o dashboard inteiro
-  ['timeline','compare'].forEach(k => {
+function _histAnosDisponiveis() {
+  return [...new Set((DB.historicoInadimplencia||[]).map(h=>(h.mes||'').slice(0,4)).filter(Boolean))].sort((a,b)=>b-a);
+}
+
+function switchHistMode(m, ano) {
+  if (m !== undefined) _histMode = m;
+  if (ano !== undefined) _histAnoSel = ano;
+  // atualiza botões
+  ['ano','compare'].forEach(k => {
     const el = document.getElementById('hbtn-'+k);
     if (!el) return;
-    el.style.background = m===k ? '#1e3a8a' : '#fff';
-    el.style.color      = m===k ? '#fff' : 'var(--text)';
+    el.style.background = _histMode===k ? '#1e3a8a' : '#fff';
+    el.style.color      = _histMode===k ? '#fff' : '#374151';
   });
-  // re-renderiza só o gráfico histórico
+  // re-renderiza só o gráfico
   const canvasHist = document.getElementById('chart-historico');
   if (!canvasHist) return;
   if (_chartHistorico) { _chartHistorico.destroy(); _chartHistorico = null; }
@@ -2179,29 +2196,58 @@ function _renderHistChart(canvasHist) {
   const hist = (DB.historicoInadimplencia||[]).filter(h => h.mes && h.taxa != null);
   if (!hist.length) return;
   const MLABELS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
-  const corPt = t => t > 5 ? '#dc2626' : t > 2 ? '#d97706' : '#16a34a';
+  const corBarra = t => t===null ? 'rgba(148,163,184,.35)' : t>5 ? 'rgba(220,38,38,.75)' : t>2 ? 'rgba(217,119,6,.75)' : 'rgba(22,163,74,.75)';
+  const corBorda = t => t===null ? '#94a3b8' : t>5 ? '#dc2626' : t>2 ? '#d97706' : '#16a34a';
+  const anos = _histAnosDisponiveis();
+  const anoRef = _histAnoSel || anos[0] || String(new Date().getFullYear());
+
+  const _getData = ano => MLABELS.map((_, i) => {
+    const key = `${ano}-${String(i+1).padStart(2,'0')}`;
+    const e = hist.find(h => h.mes === key);
+    return e != null ? e.taxa : null;
+  });
+
+  // Registra o plugin apenas uma vez
+  if (typeof ChartDataLabels !== 'undefined' && !Chart.registry.plugins.get('datalabels')) {
+    Chart.register(ChartDataLabels);
+  }
+
+  const datalabelsPlugin = {
+    display: ctx => ctx.dataset.data[ctx.dataIndex] !== null,
+    color: ctx => {
+      const v = ctx.dataset.data[ctx.dataIndex];
+      return v===null ? 'transparent' : v>5 ? '#dc2626' : v>2 ? '#d97706' : '#16a34a';
+    },
+    font: { weight: 'bold', size: 11 },
+    anchor: 'end', align: 'end',
+    formatter: v => v !== null ? v.toFixed(1)+'%' : ''
+  };
 
   if (_histMode === 'compare') {
-    // Comparativo por ano: X = mês (Jan–Dez), séries = anos
-    const anos = [...new Set(hist.map(h => (h.mes||'').slice(0,4)).filter(Boolean))].sort();
-    const CORES = ['#1e3a8a','#dc2626','#16a34a','#d97706','#7c3aed','#0891b2','#ea580c'];
-    const datasets = anos.map((ano, i) => {
-      const cor = CORES[i % CORES.length];
-      const data = MLABELS.map((_, idx) => {
-        const key = `${ano}-${String(idx+1).padStart(2,'0')}`;
-        const e = hist.find(h => h.mes === key);
-        return e != null ? e.taxa : null;
+    // Comparativo: ano selecionado vs ano anterior, barras lado a lado
+    const anoAnt = String(parseInt(anoRef) - 1);
+    const dataRef = _getData(anoRef);
+    const dataAnt = _getData(anoAnt);
+    const temAnt = dataAnt.some(v => v !== null);
+    const datasets = [
+      {
+        label: anoRef, data: dataRef, type: 'bar',
+        backgroundColor: dataRef.map(v => corBarra(v)),
+        borderColor: dataRef.map(v => corBorda(v)),
+        borderWidth: 1.5, borderRadius: 5,
+        datalabels: datalabelsPlugin
+      }
+    ];
+    if (temAnt) {
+      datasets.push({
+        label: anoAnt, data: dataAnt, type: 'bar',
+        backgroundColor: dataAnt.map(v => (corBarra(v)).replace('.75','0.35')),
+        borderColor: dataAnt.map(v => corBorda(v)),
+        borderWidth: 1.5, borderRadius: 5, borderDash: [4,2],
+        datalabels: { ...datalabelsPlugin, font: { weight: '600', size: 10 }, color: '#6b7280' }
       });
-      return {
-        label: ano, data, borderColor: cor, backgroundColor: cor+'18',
-        tension: 0.3, fill: false, spanGaps: false, borderWidth: 2.5,
-        pointBackgroundColor: data.map(v => v===null ? 'transparent' : corPt(v)),
-        pointRadius: data.map(v => v===null ? 0 : 5),
-        pointHoverRadius: 8
-      };
-    });
+    }
     _chartHistorico = new Chart(canvasHist.getContext('2d'), {
-      type: 'line',
       data: { labels: MLABELS, datasets },
       options: {
         responsive: true, interaction: { mode: 'index' },
@@ -2210,35 +2256,38 @@ function _renderHistChart(canvasHist) {
           tooltip: { callbacks: { label: c => c.raw !== null ? ` ${c.dataset.label}: ${c.raw.toFixed(1)}%` : '' } }
         },
         scales: {
-          y: { min: 0, ticks: { callback: v => v+'%' }, grid: { color: '#e2e8f0' } },
+          y: { min: 0, ticks: { callback: v => v+'%' }, grid: { color: '#e2e8f0' }, title: { display: true, text: 'Taxa de Inadimplência (%)' } },
           x: { grid: { display: false } }
-        }
+        },
+        layout: { padding: { top: 24 } }
       }
     });
   } else {
-    // Linha temporal completa
+    // Ano único: barras com rótulo da taxa
+    const data = _getData(anoRef);
     _chartHistorico = new Chart(canvasHist.getContext('2d'), {
-      type: 'line',
+      type: 'bar',
       data: {
-        labels: hist.map(h => h.label),
+        labels: MLABELS,
         datasets: [{
-          label: 'Taxa (%)', data: hist.map(h => h.taxa),
-          borderColor: '#1e3a8a', backgroundColor: 'rgba(30,58,138,0.08)',
-          fill: true, tension: 0.35, borderWidth: 2.5,
-          pointBackgroundColor: hist.map(h => corPt(h.taxa)),
-          pointRadius: 5, pointHoverRadius: 8
+          label: `Taxa ${anoRef} (%)`, data,
+          backgroundColor: data.map(v => corBarra(v)),
+          borderColor: data.map(v => corBorda(v)),
+          borderWidth: 1.5, borderRadius: 6,
+          datalabels: datalabelsPlugin
         }]
       },
       options: {
         responsive: true,
         plugins: {
           legend: { display: false },
-          tooltip: { callbacks: { label: c => ` ${c.raw.toFixed(1)}% de inadimplência` } }
+          tooltip: { callbacks: { label: c => c.raw !== null ? ` ${c.raw.toFixed(1)}% de inadimplência` : ' sem fechamento' } }
         },
         scales: {
-          y: { min: 0, ticks: { callback: v => v+'%' }, grid: { color: '#e2e8f0' } },
+          y: { min: 0, ticks: { callback: v => v+'%' }, grid: { color: '#e2e8f0' }, title: { display: true, text: 'Taxa (%)' } },
           x: { grid: { display: false } }
-        }
+        },
+        layout: { padding: { top: 24 } }
       }
     });
   }
