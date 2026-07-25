@@ -2918,11 +2918,29 @@ function gerarRelatorioIndicadores() {
   const data = new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'});
 
   const ativos = notas.filter(n => !['pago','perdido','reprogramado'].includes(calcStatus(n)) && diasAtraso(n.vencimento) > 0);
-  const pagos  = notas.filter(n => calcStatus(n) === 'pago');
   const totalVencido  = ativos.reduce((s,n)=>s+Number(n.valor||0),0);
-  const totalPago     = pagos.reduce((s,n)=>s+Number(n.valor||0),0);
-  const totalCarteira = totalVencido + totalPago;
-  const taxaInadimp   = totalCarteira > 0 ? ((totalVencido/totalCarteira)*100).toFixed(1) : '0.0';
+
+  // Taxa do mês e do ano vigente — usa faturamento de Parâmetros como base
+  const _hj = new Date();
+  const _ano = String(_hj.getFullYear());
+  const _mes = String(_hj.getMonth()+1).padStart(2,'0');
+  const _prefMes = _ano+'-'+_mes;
+
+  const _fatMes = _empresaFiltro
+    ? Number((DB.faturamentoEmp?.[_empresaFiltro]?.[_ano]||{})[_mes]||0)
+    : getMesFatTodas(_ano, _mes) || Number((DB.faturamento[_ano]||{})[_mes]||0);
+  const _fatAno = _empresaFiltro ? getFatAnoEmp(_ano, _empresaFiltro) : getFatConsolidado(_ano);
+
+  const _notasMes = notas.filter(n=>(n.vencimento||'').startsWith(_prefMes));
+  const _vencMes  = _notasMes.filter(n=>calcStatus(n)!=='pago'&&calcStatus(n)!=='perdido'&&diasAtraso(n.vencimento)>0).reduce((s,n)=>s+Number(n.valor||0),0);
+  const _notasAno = notas.filter(n=>(n.vencimento||'').startsWith(_ano));
+  const _vencAno  = _notasAno.filter(n=>calcStatus(n)!=='pago'&&calcStatus(n)!=='perdido'&&diasAtraso(n.vencimento)>0).reduce((s,n)=>s+Number(n.valor||0),0);
+
+  const _taxaMes = _fatMes > 0 ? ((_vencMes/_fatMes)*100).toFixed(1) : null;
+  const _taxaAno = _fatAno > 0 ? ((_vencAno/_fatAno)*100).toFixed(1) : null;
+  const _cor  = t => t===null?'#64748b':Number(t)>5?'#dc2626':Number(t)>2?'#d97706':'#16a34a';
+  const _bg   = t => t===null?'#f8fafc':Number(t)>5?'#fef2f2':Number(t)>2?'#fffbeb':'#f0fdf4';
+  const _bd   = t => t===null?'#e2e8f0':Number(t)>5?'#fca5a5':Number(t)>2?'#fde68a':'#86efac';
 
   // ── Aging ──
   const agingBuckets = [
@@ -3022,13 +3040,23 @@ function gerarRelatorioIndicadores() {
 
   <!-- LINHA 3: Taxa de Inadimplência -->
   <h2>Indicadores de Eficiência</h2>
-  <div style="margin-bottom:14px">
-    <div style="border:2px solid #1e3a8a;border-radius:12px;padding:22px 26px;background:#eff6ff">
-      <div style="font-size:11px;font-weight:700;color:#1e3a8a;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Taxa de Inadimplência (sobre carteira total)</div>
-      <div style="font-size:42px;font-weight:900;color:#1e3a8a">${taxaInadimp}%</div>
-      <div style="font-size:12px;color:#3b82f6;margin-top:6px">Carteira total: ${fmt(totalCarteira)} &nbsp;|&nbsp; Verde ≤ 2% &nbsp;·&nbsp; Laranja 2–5% &nbsp;·&nbsp; Vermelho > 5%</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
+    <div style="border:2px solid ${_bd(_taxaMes)};border-radius:12px;padding:20px 24px;background:${_bg(_taxaMes)}">
+      <div style="font-size:11px;font-weight:700;color:${_cor(_taxaMes)};text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Inadimplência — ${MESES[_hj.getMonth()]}/${_ano}</div>
+      <div style="font-size:42px;font-weight:900;color:${_cor(_taxaMes)}">${_taxaMes !== null ? _taxaMes+'%' : '—'}</div>
+      <div style="font-size:11px;color:${_cor(_taxaMes)};margin-top:6px;opacity:.85">
+        ${_fatMes > 0 ? 'Fat.: '+fmt(_fatMes)+' &nbsp;·&nbsp; Inadimpl.: '+fmt(_vencMes) : '⚠️ Faturamento do mês não cadastrado em Parâmetros'}
+      </div>
+    </div>
+    <div style="border:2px solid ${_bd(_taxaAno)};border-radius:12px;padding:20px 24px;background:${_bg(_taxaAno)}">
+      <div style="font-size:11px;font-weight:700;color:${_cor(_taxaAno)};text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Inadimplência — Ano ${_ano}</div>
+      <div style="font-size:42px;font-weight:900;color:${_cor(_taxaAno)}">${_taxaAno !== null ? _taxaAno+'%' : '—'}</div>
+      <div style="font-size:11px;color:${_cor(_taxaAno)};margin-top:6px;opacity:.85">
+        ${_fatAno > 0 ? 'Fat.: '+fmt(_fatAno)+' &nbsp;·&nbsp; Inadimpl.: '+fmt(_vencAno) : '⚠️ Faturamento do ano não cadastrado em Parâmetros'}
+      </div>
     </div>
   </div>
+  <div style="font-size:11px;color:var(--text-muted);margin-bottom:14px">Verde ≤ 2% &nbsp;·&nbsp; Laranja 2–5% &nbsp;·&nbsp; Vermelho > 5% &nbsp;·&nbsp; Base: faturamento cadastrado em Parâmetros</div>
 
   <!-- AGING -->
   <h2>📅 Aging — Faixa de Atraso</h2>
