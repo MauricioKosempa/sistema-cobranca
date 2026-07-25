@@ -2926,7 +2926,9 @@ function gerarRelatorioIndicadores() {
   const data = new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'});
 
   const ativos = notas.filter(n => !['pago','perdido','reprogramado'].includes(calcStatus(n)) && diasAtraso(n.vencimento) > 0);
+  const pagos  = notas.filter(n => calcStatus(n) === 'pago');
   const totalVencido  = ativos.reduce((s,n)=>s+Number(n.valor||0),0);
+  const totalPago     = pagos.reduce((s,n)=>s+Number(n.valor||0),0);
 
   // Taxa do mês e do ano vigente — usa faturamento de Parâmetros como base
   const _hj = new Date();
