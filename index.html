@@ -3688,7 +3688,18 @@ function saveCli(id){
   DB.clientes.sort((a,b)=>(a.nome||'').localeCompare(b.nome||'','pt-BR',{sensitivity:'base'}));
   saveDB();closeModal();renderClientes();
 }
-function delCliente(id){if(!confirm('Excluir?'))return;DB.clientes=DB.clientes.filter(x=>x.id!==id);saveDB();renderClientes();}
+function delCliente(id){
+  const c=DB.clientes.find(x=>x.id===id);
+  if(!c)return;
+  const temNotas=DB.notas.some(n=>n.cliente===c.nome);
+  if(temNotas){
+    alert(`⚠️ O cliente "${c.nome}" possui lançamento(s) em Recebimentos Vencidos e não pode ser excluído.\n\nExclua os lançamentos vinculados antes de remover o cadastro.`);
+    return;
+  }
+  if(!confirm(`Excluir o cliente "${c.nome}"?`))return;
+  DB.clientes=DB.clientes.filter(x=>x.id!==id);
+  saveDB();renderClientes();
+}
 
 /* ============================================================
    IMPORTAR CLIENTES VIA EXCEL
@@ -5995,9 +6006,26 @@ function removerEmpresa(nome){
 }
 
 function excluirImportacao(batchId,arquivo,qtd){
-  if(!confirm(`⚠️ Excluir permanentemente ${qtd} lançamento(s) do arquivo "${arquivo}"?`))return;
-  DB.notas=DB.notas.filter(n=>n.batchId!==batchId);saveDB();
-  alert(`✅ ${qtd} lançamento(s) excluído(s).`);renderConfiguracoes();
+  if(!confirm(`⚠️ Excluir permanentemente ${qtd} lançamento(s) do arquivo "${arquivo}"?\n\nClientes criados exclusivamente por esta importação (sem outros lançamentos) também serão removidos.`))return;
+
+  // Clientes das notas deste batch
+  const notasBatch=DB.notas.filter(n=>n.batchId===batchId);
+  const clientesBatch=[...new Set(notasBatch.map(n=>n.cliente).filter(Boolean))];
+
+  // Remove as notas do batch
+  DB.notas=DB.notas.filter(n=>n.batchId!==batchId);
+
+  // Remove clientes que ficaram sem nenhum lançamento restante
+  const clientesRemovidos=clientesBatch.filter(nome=>!DB.notas.some(n=>n.cliente===nome));
+  if(clientesRemovidos.length>0){
+    DB.clientes=DB.clientes.filter(c=>!clientesRemovidos.includes(c.nome));
+  }
+
+  saveDB();
+  let msg=`✅ ${qtd} lançamento(s) excluído(s).`;
+  if(clientesRemovidos.length>0) msg+=`\n${clientesRemovidos.length} cadastro(s) de cliente também removido(s) por não terem outros lançamentos.`;
+  alert(msg);
+  renderConfiguracoes();
 }
 
 function baixarPlanilhaImportacao(batchId, arquivo) {
