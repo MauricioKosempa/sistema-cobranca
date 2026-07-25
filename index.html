@@ -3687,7 +3687,7 @@ async function baixarPlanilhaRecebimentos() {
   r2.getCell(1).border    = borda('FFBfDBFE','thin');
 
   // ── Linha 3: Cabeçalhos ───────────────────────────────────────
-  const hdrs = ['Nº NF *','Cliente *','Vencimento *\n(AAAA-MM-DD)','Valor da Nota *','Empresa *','Status','Em Tratativa Com','Vendedor'];
+  const hdrs = ['NF','Cliente','Vencimento','Valor','Empresa','Status','Em Tratativa Com','Vendedor'];
   const r3 = ws.addRow(hdrs);
   r3.height = 30;
   r3.eachCell(cell => {
