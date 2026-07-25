@@ -2920,41 +2920,63 @@ function abrirMapaTratativas(areaKey) {
 
 function gerarRelatorioIndicadores() {
   const anos = [...new Set(DB.notas.map(n=>(n.vencimento||'').slice(0,4)).filter(a=>a&&!isNaN(a)))].sort((a,b)=>b-a);
-  const anosOpts = anos.map(a=>`<option value="${a}">${a}</option>`).join('');
   const hoje = new Date();
   const mesRef = new Date(hoje.getFullYear(), hoje.getMonth()-1, 1);
-  const anoRefStr  = String(mesRef.getFullYear());
-  const mesRefStr  = String(mesRef.getMonth()+1).padStart(2,'0');
-  const mesesOpts  = MESES.map((m,i)=>`<option value="${String(i+1).padStart(2,'0')}" ${String(i+1).padStart(2,'0')===mesRefStr?'selected':''}>${m}</option>`).join('');
-  const anosOptsMes = anos.map(a=>`<option value="${a}" ${a===anoRefStr?'selected':''}>${a}</option>`).join('');
+  const anoRefStr = String(mesRef.getFullYear());
+  const mesRefStr = String(mesRef.getMonth()+1).padStart(2,'0');
+  const anoAtualStr = String(hoje.getFullYear());
+  const mO = a => anos.map(x=>`<option value="${x}" ${x===(a||anoRefStr)?'selected':''}>${x}</option>`).join('');
+  const mesesOpts = MESES.map((m,i)=>`<option value="${String(i+1).padStart(2,'0')}" ${String(i+1).padStart(2,'0')===mesRefStr?'selected':''}>${m}</option>`).join('');
+  // Quarter atual: determinar pelo mês anterior
+  const qAtual = ['Q1','Q1','Q1','Q2','Q2','Q2','Q3','Q3','Q3','Q4','Q4','Q4'][mesRef.getMonth()];
+  const sAtual = mesRef.getMonth() < 6 ? 'S1' : 'S2';
+  const mkSel = (id, opts, onclk) => `<select id="${id}" style="padding:5px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px" onclick="${onclk}">${opts}</select>`;
 
   openModal(`
     <h2 style="margin-bottom:6px">📄 Gerar Relatório de Indicadores</h2>
-    <p style="font-size:13px;color:var(--text-muted);margin-bottom:18px">Selecione o período de análise</p>
-    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px">
-      <label id="rp-lbl-total" style="display:flex;align-items:flex-start;gap:12px;padding:12px 14px;border:2px solid var(--primary-light);border-radius:8px;cursor:pointer;background:#eff6ff">
-        <input type="radio" name="rp" value="total" checked onchange="rpChange()" style="margin-top:3px">
-        <div><div style="font-weight:600">Total (toda a carteira)</div><div style="font-size:12px;color:var(--text-muted)">Todos os títulos sem filtro de período</div></div>
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px">Selecione o período de análise</p>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:20px">
+
+      <label id="rp-lbl-total" style="display:flex;align-items:center;gap:12px;padding:10px 14px;border:2px solid var(--primary-light);border-radius:8px;cursor:pointer;background:#eff6ff">
+        <input type="radio" name="rp" value="total" checked onchange="rpChange()">
+        <div><b>Total</b> <span style="font-size:12px;color:var(--text-muted)">— toda a carteira sem filtro de data</span></div>
       </label>
-      <label id="rp-lbl-ano" style="display:flex;align-items:flex-start;gap:12px;padding:12px 14px;border:2px solid var(--border);border-radius:8px;cursor:pointer">
-        <input type="radio" name="rp" value="ano" onchange="rpChange()" style="margin-top:3px">
-        <div style="flex:1">
-          <div style="font-weight:600">Por Ano</div>
-          <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px">Títulos com vencimento no ano selecionado</div>
-          <select id="rp-ano" style="padding:5px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px" onclick="document.querySelector('[name=rp][value=ano]').checked=true;rpChange()">${anosOpts}</select>
+
+      <label id="rp-lbl-ano" style="display:flex;align-items:center;gap:12px;padding:10px 14px;border:2px solid var(--border);border-radius:8px;cursor:pointer">
+        <input type="radio" name="rp" value="ano" onchange="rpChange()">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <b>Por Ano</b>
+          ${mkSel('rp-ano', mO(anoAtualStr), "document.querySelector('[name=rp][value=ano]').checked=true;rpChange()")}
         </div>
       </label>
-      <label id="rp-lbl-mes" style="display:flex;align-items:flex-start;gap:12px;padding:12px 14px;border:2px solid var(--border);border-radius:8px;cursor:pointer">
-        <input type="radio" name="rp" value="mes" onchange="rpChange()" style="margin-top:3px">
-        <div style="flex:1">
-          <div style="font-weight:600">Mês Fechado</div>
-          <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px">Títulos com vencimento no mês selecionado</div>
-          <div style="display:flex;gap:8px">
-            <select id="rp-mes-m" style="padding:5px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px" onclick="document.querySelector('[name=rp][value=mes]').checked=true;rpChange()">${mesesOpts}</select>
-            <select id="rp-mes-a" style="padding:5px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px" onclick="document.querySelector('[name=rp][value=mes]').checked=true;rpChange()">${anosOptsMes}</select>
-          </div>
+
+      <label id="rp-lbl-semestre" style="display:flex;align-items:center;gap:12px;padding:10px 14px;border:2px solid var(--border);border-radius:8px;cursor:pointer">
+        <input type="radio" name="rp" value="semestre" onchange="rpChange()">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <b>Semestre</b>
+          ${mkSel('rp-sem', `<option value="S1" ${sAtual==='S1'?'selected':''}>S1 (Jan–Jun)</option><option value="S2" ${sAtual==='S2'?'selected':''}>S2 (Jul–Dez)</option>`, "document.querySelector('[name=rp][value=semestre]').checked=true;rpChange()")}
+          ${mkSel('rp-sem-a', mO(anoAtualStr), "document.querySelector('[name=rp][value=semestre]').checked=true;rpChange()")}
         </div>
       </label>
+
+      <label id="rp-lbl-quarter" style="display:flex;align-items:center;gap:12px;padding:10px 14px;border:2px solid var(--border);border-radius:8px;cursor:pointer">
+        <input type="radio" name="rp" value="quarter" onchange="rpChange()">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <b>Quarter</b>
+          ${mkSel('rp-q', ['Q1','Q2','Q3','Q4'].map(q=>`<option value="${q}" ${q===qAtual?'selected':''}>${q} — ${{Q1:'Jan–Mar',Q2:'Abr–Jun',Q3:'Jul–Set',Q4:'Out–Dez'}[q]}</option>`).join(''), "document.querySelector('[name=rp][value=quarter]').checked=true;rpChange()")}
+          ${mkSel('rp-q-a', mO(anoAtualStr), "document.querySelector('[name=rp][value=quarter]').checked=true;rpChange()")}
+        </div>
+      </label>
+
+      <label id="rp-lbl-mes" style="display:flex;align-items:center;gap:12px;padding:10px 14px;border:2px solid var(--border);border-radius:8px;cursor:pointer">
+        <input type="radio" name="rp" value="mes" onchange="rpChange()">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <b>Mês Fechado</b>
+          ${mkSel('rp-mes-m', mesesOpts, "document.querySelector('[name=rp][value=mes]').checked=true;rpChange()")}
+          ${mkSel('rp-mes-a', mO(anoRefStr), "document.querySelector('[name=rp][value=mes]').checked=true;rpChange()")}
+        </div>
+      </label>
+
     </div>
     <div class="form-actions">
       <button class="btn btn-primary" onclick="execRelatorio()">📄 Gerar Relatório</button>
@@ -2965,7 +2987,7 @@ function gerarRelatorioIndicadores() {
 
 function rpChange() {
   const val = document.querySelector('input[name="rp"]:checked')?.value;
-  ['total','ano','mes'].forEach(k => {
+  ['total','ano','semestre','quarter','mes'].forEach(k => {
     const el = document.getElementById('rp-lbl-'+k);
     if (!el) return;
     el.style.borderColor = val===k ? 'var(--primary-light)' : 'var(--border)';
@@ -2974,9 +2996,12 @@ function rpChange() {
 }
 
 function execRelatorio() {
-  const tipo   = document.querySelector('input[name="rp"]:checked')?.value || 'total';
-  const ano    = tipo==='ano' ? (document.getElementById('rp-ano')?.value||'') : (document.getElementById('rp-mes-a')?.value||'');
-  const mes    = tipo==='mes' ? (document.getElementById('rp-mes-m')?.value||'') : '';
+  const tipo = document.querySelector('input[name="rp"]:checked')?.value || 'total';
+  let ano = '', mes = '';
+  if (tipo === 'ano')      { ano = document.getElementById('rp-ano')?.value||''; }
+  if (tipo === 'semestre') { ano = document.getElementById('rp-sem-a')?.value||''; mes = document.getElementById('rp-sem')?.value||''; }
+  if (tipo === 'quarter')  { ano = document.getElementById('rp-q-a')?.value||'';  mes = document.getElementById('rp-q')?.value||''; }
+  if (tipo === 'mes')      { ano = document.getElementById('rp-mes-a')?.value||''; mes = document.getElementById('rp-mes-m')?.value||''; }
   closeModal();
   _execRelatorioIndicadores(tipo, ano, mes);
 }
@@ -2985,20 +3010,57 @@ function _execRelatorioIndicadores(tipo, filtroAno, filtroMes) {
   const todasNotas = DB.notas;
   let notasBase = _empresaFiltro ? todasNotas.filter(n => n.empresa === _empresaFiltro) : todasNotas;
 
-  // Filtro de período
+  // Constantes de meses por período
+  const _QM = { Q1:['01','02','03'], Q2:['04','05','06'], Q3:['07','08','09'], Q4:['10','11','12'] };
+  const _SM = { S1:['01','02','03','04','05','06'], S2:['07','08','09','10','11','12'] };
+  const _TODOS_MESES = ['01','02','03','04','05','06','07','08','09','10','11','12'];
+
+  function _mesesDoPeriodo(t, m) {
+    if (t === 'mes')      return [m];
+    if (t === 'quarter')  return _QM[m] || [];
+    if (t === 'semestre') return _SM[m] || [];
+    if (t === 'ano')      return _TODOS_MESES;
+    return _TODOS_MESES; // total
+  }
+  const _mesesFiltro = _mesesDoPeriodo(tipo, filtroMes);
+
+  // Filtro de período nas notas
   if (tipo === 'ano' && filtroAno) {
     notasBase = notasBase.filter(n => (n.vencimento||'').startsWith(filtroAno));
-  } else if (tipo === 'mes' && filtroAno && filtroMes) {
-    notasBase = notasBase.filter(n => (n.vencimento||'').startsWith(filtroAno+'-'+filtroMes));
+  } else if (['mes','quarter','semestre'].includes(tipo) && filtroAno && filtroMes) {
+    notasBase = notasBase.filter(n => _mesesFiltro.some(m => (n.vencimento||'').startsWith(filtroAno+'-'+m)));
   }
   const notas = notasBase;
 
   const empresa = _empresaFiltro ? _empresaFiltro : (DB.config.empresaNome || 'Reconlog');
-  const periodoLabel = tipo==='mes'
-    ? `${MESES[parseInt(filtroMes)-1]}/${filtroAno}`
-    : tipo==='ano' ? `Ano ${filtroAno}` : 'Total — Toda a Carteira';
+  const _mesNome = tipo==='mes' ? MESES[parseInt(filtroMes)-1] : '';
+  const _semNome = tipo==='semestre' ? ({S1:'1º Semestre',S2:'2º Semestre'})[filtroMes]||filtroMes : '';
+  const _qNome   = tipo==='quarter' ? ({Q1:'Jan–Mar',Q2:'Abr–Jun',Q3:'Jul–Set',Q4:'Out–Dez'})[filtroMes]||'' : '';
+  const periodoLabel =
+    tipo==='mes'      ? `${_mesNome}/${filtroAno}` :
+    tipo==='quarter'  ? `${filtroMes} (${_qNome}) ${filtroAno}` :
+    tipo==='semestre' ? `${filtroMes} — ${_semNome} ${filtroAno}` :
+    tipo==='ano'      ? `Ano ${filtroAno}` : 'Total — Toda a Carteira';
   const escopoLabel = (_empresaFiltro ? `Empresa: ${_empresaFiltro} · ` : 'Consolidado — ') + periodoLabel;
   const data = new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'});
+
+  // ── Dados comparativos ano a ano (mesmo período, 5 anos) ──────────────────
+  const _anoNumRef = parseInt(filtroAno || new Date().getFullYear());
+  const _compAnos  = Array.from({length:5}, (_,i) => String(_anoNumRef - 4 + i));
+  const _baseAllNotas = _empresaFiltro ? DB.notas.filter(n=>n.empresa===_empresaFiltro) : DB.notas;
+  const _compData = _compAnos.map(y => {
+    const meses = (tipo === 'total') ? _TODOS_MESES : _mesesFiltro;
+    const notasY = _baseAllNotas.filter(n => meses.some(m => (n.vencimento||'').startsWith(y+'-'+m)));
+    const vencY  = notasY.filter(n=>!['pago','perdido'].includes(calcStatus(n))&&diasAtraso(n.vencimento)>0).reduce((s,n)=>s+Number(n.valor||0),0);
+    let fatY = 0;
+    meses.forEach(m => {
+      fatY += _empresaFiltro
+        ? Number((DB.faturamentoEmp?.[_empresaFiltro]?.[y]||{})[m]||0)
+        : (getMesFatTodas(y, m) || Number((DB.faturamento[y]||{})[m]||0));
+    });
+    const taxaY = fatY > 0 ? parseFloat((vencY/fatY*100).toFixed(1)) : null;
+    return { ano: y, vencido: vencY, faturamento: fatY, taxa: taxaY };
+  });
 
   const ativos = notas.filter(n => !['pago','perdido','reprogramado'].includes(calcStatus(n)) && diasAtraso(n.vencimento) > 0);
   const pagos  = notas.filter(n => calcStatus(n) === 'pago');
@@ -3200,11 +3262,21 @@ function _execRelatorioIndicadores(tipo, filtroAno, filtroMes) {
   <div class="chart-wrap"><canvas id="grafMensal"></canvas></div>
   <p style="font-size:11px;color:#94a3b8;margin-bottom:4px">Vencimentos em aberto por mês de vencimento (posição atual)</p>
 
-  <!-- LINHA 5: Gráfico histórico estático -->
-  <h2>📊 Histórico de Inadimplência Mensal — Fechamentos</h2>
-  ${hist.length>0
-    ? `<div class="chart-wrap"><canvas id="grafHistorico"></canvas></div><p style="font-size:11px;color:#94a3b8;margin-bottom:4px">Taxa (%) registrada no fechamento de cada mês</p>`
-    : `<p style="font-size:13px;color:#94a3b8;padding:16px 0;text-align:center">Nenhum mês fechado ainda. Use "📌 Fechar Mês" no Dashboard.</p>`}
+  <!-- LINHA 5: Comparativo Ano a Ano -->
+  <h2>📊 Comparativo Ano a Ano — ${periodoLabel}</h2>
+  <div class="chart-wrap" style="height:220px"><canvas id="grafCompAnual"></canvas></div>
+  <table style="margin-top:10px;margin-bottom:4px">
+    <thead><tr><th>Ano</th><th class="r">Faturamento</th><th class="r">Inadimpl. (R$)</th><th class="r">Taxa (%)</th></tr></thead>
+    <tbody>
+      ${_compData.map(d=>`<tr>
+        <td style="padding:7px 12px;border-bottom:1px solid #e5e7eb;font-weight:600">${d.ano}</td>
+        <td style="padding:7px 12px;border-bottom:1px solid #e5e7eb;text-align:right;color:#6b7280">${d.faturamento>0?fmt(d.faturamento):'—'}</td>
+        <td style="padding:7px 12px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:700;color:#dc2626">${d.vencido>0?fmt(d.vencido):'—'}</td>
+        <td style="padding:7px 12px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:700;color:${d.taxa===null?'#94a3b8':d.taxa>5?'#dc2626':d.taxa>2?'#d97706':'#16a34a'}">${d.taxa!==null?d.taxa+'%':'sem faturamento'}</td>
+      </tr>`).join('')}
+    </tbody>
+  </table>
+  <p style="font-size:11px;color:#94a3b8;margin-bottom:4px">Barras = vencido (R$) · Linha = taxa de inadimplência (%) · Cor: verde ≤2% / laranja 2–5% / vermelho &gt;5%</p>
 
   <!-- LINHA 6: Mapa de Tratativas -->
   <h2>Mapa de Tratativas</h2>
@@ -3232,14 +3304,39 @@ function _execRelatorioIndicadores(tipo, filtroAno, filtroMes) {
 </div>
 <script>
 (function(){
+  const fmtBR = v => v==null?'—':'R$'+v.toLocaleString('pt-BR',{minimumFractionDigits:2});
+  const fmtK  = v => 'R$'+v.toLocaleString('pt-BR',{notation:'compact',compactDisplay:'short'});
+
+  // Gráfico 1: Tendência mensal (últimos 12 meses)
   const labels=${JSON.stringify(grafLabels)};
   const valores=${JSON.stringify(grafValores)};
   const ctx1=document.getElementById('grafMensal');
-  if(ctx1){new Chart(ctx1.getContext('2d'),{type:'bar',data:{labels,datasets:[{label:'Vencido em Aberto (R$)',data:valores,backgroundColor:valores.map(v=>v>0?'rgba(220,38,38,.7)':'rgba(148,163,184,.4)'),borderColor:valores.map(v=>v>0?'#dc2626':'#94a3b8'),borderWidth:1.5,borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>' R$ '+c.raw.toLocaleString('pt-BR',{minimumFractionDigits:2})}}},scales:{y:{ticks:{callback:v=>'R$'+v.toLocaleString('pt-BR',{notation:'compact',compactDisplay:'short'})},grid:{color:'#e2e8f0'}},x:{grid:{display:false}}}}});}
+  if(ctx1){new Chart(ctx1.getContext('2d'),{type:'bar',data:{labels,datasets:[{label:'Vencido em Aberto (R$)',data:valores,backgroundColor:valores.map(v=>v>0?'rgba(220,38,38,.7)':'rgba(148,163,184,.4)'),borderColor:valores.map(v=>v>0?'#dc2626':'#94a3b8'),borderWidth:1.5,borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>' '+fmtBR(c.raw)}}},scales:{y:{ticks:{callback:v=>fmtK(v)},grid:{color:'#e2e8f0'}},x:{grid:{display:false}}}}});}
 
-  const hist=${JSON.stringify(hist)};
-  const ctx2=document.getElementById('grafHistorico');
-  if(ctx2&&hist.length){new Chart(ctx2.getContext('2d'),{type:'line',data:{labels:hist.map(h=>h.label),datasets:[{label:'Taxa de Inadimplência (%)',data:hist.map(h=>h.taxa),borderColor:'#1e3a8a',backgroundColor:'rgba(30,58,138,.08)',fill:true,tension:.35,pointBackgroundColor:hist.map(h=>h.taxa>5?'#dc2626':h.taxa>2?'#d97706':'#16a34a'),pointRadius:6,pointHoverRadius:8,borderWidth:2.5}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>' '+c.raw.toFixed(1)+'% de inadimplência'}}},scales:{y:{ticks:{callback:v=>v+'%'},grid:{color:'#e2e8f0'},min:0},x:{grid:{display:false}}}}});}
+  // Gráfico 2: Comparativo Ano a Ano
+  const compData=${JSON.stringify(_compData)};
+  const ctx2=document.getElementById('grafCompAnual');
+  if(ctx2&&compData.length){
+    const corPt = t => t===null?'#94a3b8':t>5?'#dc2626':t>2?'#d97706':'#16a34a';
+    const bgBar = t => t===null?'rgba(148,163,184,.4)':t>5?'rgba(220,38,38,.7)':t>2?'rgba(217,119,6,.7)':'rgba(22,163,74,.7)';
+    new Chart(ctx2.getContext('2d'),{
+      data:{
+        labels:compData.map(d=>d.ano),
+        datasets:[
+          {type:'bar',label:'Inadimpl. (R$)',data:compData.map(d=>d.vencido),backgroundColor:compData.map(d=>bgBar(d.taxa)),borderColor:compData.map(d=>corPt(d.taxa)),borderWidth:1.5,borderRadius:6,yAxisID:'yVal'},
+          {type:'line',label:'Taxa (%)',data:compData.map(d=>d.taxa),borderColor:'#1e3a8a',backgroundColor:'rgba(30,58,138,.07)',borderWidth:2.5,tension:.3,fill:false,pointBackgroundColor:compData.map(d=>corPt(d.taxa)),pointRadius:7,pointHoverRadius:9,yAxisID:'yPct',spanGaps:true}
+        ]
+      },
+      options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index'},
+        plugins:{legend:{display:true,position:'top'},tooltip:{callbacks:{label:c=>c.dataset.yAxisID==='yPct'?(c.raw!=null?' '+c.raw.toFixed(1)+'%':' sem faturamento'):' '+fmtBR(c.raw)}}},
+        scales:{
+          yVal:{type:'linear',position:'left',ticks:{callback:v=>fmtK(v)},grid:{color:'#e2e8f0'}},
+          yPct:{type:'linear',position:'right',min:0,ticks:{callback:v=>v+'%'},grid:{display:false}},
+          x:{grid:{display:false}}
+        }
+      }
+    });
+  }
 })();
 <\/script>
 </body></html>`;
