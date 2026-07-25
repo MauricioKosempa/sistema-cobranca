@@ -2428,7 +2428,6 @@ function buildActionBtns(n, s) {
   }
   if (s==='aguardando_cartorio') r.push(`<button class="flag-btn" style="background:#fce7f3;color:#9d174d" onclick="flagCartorio('${id}')">⚖️ Enviar Cartório</button>`);
   if (s==='protestado') r.push(`<button class="flag-btn" style="background:#fee2e2;color:#7f1d1d" onclick="flagJuridico('${id}')">⚖️ Enviar p/ Jurídico</button>`);
-  if (s==='juridico') r.push(`<button class="flag-btn" style="background:#fff1f2;color:#881337;border:1px solid #fca5a5" onclick="setBase('${id}','processo_judicial')">🔴 Proc. Judicial</button>`);
   if (!['pago','perdido'].includes(s)) {
     r.push(`<button class="flag-btn" style="background:#dcfce7;color:#15803d" onclick="setBase('${id}','pago')">✅ Pago</button>`);
     if (s==='aguardar') r.push(`<button class="flag-btn" style="background:#e0f2fe;color:#075985" onclick="clearAguardar('${id}')">▶️ Retomar</button>`);
@@ -3414,7 +3413,6 @@ function buildActionBtnsModal(n,s) {
   }
   if(s==='aguardando_cartorio') r.push(`<button class="btn btn-sm" style="background:#fce7f3;color:#9d174d" onclick="flagCartorio('${id}');closeModal()">⚖️ Enviar ao Cartório</button>`);
   if(s==='protestado') r.push(`<button class="btn btn-sm" style="background:#fee2e2;color:#7f1d1d" onclick="flagJuridico('${id}');closeModal()">⚖️ Enviar p/ Jurídico</button>`);
-  if(s==='juridico') r.push(`<button class="btn btn-sm" style="background:#fff1f2;color:#881337;border:1px solid #fca5a5" onclick="setBase('${id}','processo_judicial');closeModal()">🔴 Mover p/ Processo Judicial</button>`);
   if(!['pago','perdido'].includes(s)){
     r.push(`<button class="btn btn-sm" style="background:#dcfce7;color:#15803d" onclick="setBase('${id}','pago');closeModal()">✅ Pago</button>`);
     if(s==='aguardar') r.push(`<button class="btn btn-sm" style="background:#e0f2fe;color:#075985" onclick="clearAguardar('${id}');closeModal()">▶️ Retomar</button>`);
