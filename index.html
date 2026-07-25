@@ -86,6 +86,9 @@
   th { background: #f8fafc; font-weight: 600; text-align: left; padding: 9px 12px; border-bottom: 2px solid var(--border); color: var(--text-muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: .4px; white-space: nowrap; }
   td { padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
   #vencidos-tbl td { white-space: nowrap; }
+  #vencidos-tbl th { position: relative; overflow: hidden; }
+  .col-resize-handle { position:absolute;right:0;top:0;height:100%;width:5px;cursor:col-resize;z-index:2;border-right:2px solid transparent;transition:border-color .15s }
+  .col-resize-handle:hover,.col-resize-handle.active { border-right-color:rgba(37,99,235,.6);background:rgba(37,99,235,.08) }
   tr:last-child td { border-bottom: none; }
   tr:hover td { background: #f8fafc; }
   .badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 600; white-space: nowrap; }
@@ -2284,7 +2287,81 @@ function filterVencidos() {
       <th>Empresa</th><th>Vendedor</th><th class="text-right">Valor</th><th>Status</th>
       <th>Observação</th><th style="white-space:nowrap">📋 ✏️ 🗑️</th>
     </tr></thead><tbody>${rows||'<tr><td colspan="11" class="text-center text-muted" style="padding:20px">Nenhuma nota encontrada</td></tr>'}</tbody></table>
-    <div class="text-muted" style="font-size:12px;padding:8px 0">${notas.length} nota(s)</div>`;
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0">
+      <div class="text-muted" style="font-size:12px">${notas.length} nota(s) &nbsp;·&nbsp; <span style="font-size:11px;opacity:.7">↔ Arraste a borda do cabeçalho para redimensionar colunas</span></div>
+      <button class="btn btn-ghost btn-xs" onclick="resetColWidths()" title="Restaurar larguras originais" style="font-size:11px;color:var(--text-muted);opacity:.7">↺ Resetar colunas</button>
+    </div>`;
+  requestAnimationFrame(initColResize);
+}
+
+/* ---- Redimensionamento de colunas (arrastar borda, igual Excel) ---- */
+function initColResize() {
+  const tableEl = document.querySelector('#vencidos-tbl table');
+  if (!tableEl || tableEl.dataset.crInit) return;
+  tableEl.dataset.crInit = '1';
+
+  const ths = Array.from(tableEl.querySelectorAll('thead > tr > th'));
+  // Captura larguras naturais antes de setar layout fixo
+  const naturalW = ths.map(th => th.offsetWidth || 80);
+  // Carrega larguras salvas
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem('venc_colW') || '{}'); } catch(e) {}
+
+  // Cria colgroup
+  const colgroup = document.createElement('colgroup');
+  const cols = ths.map((th, i) => {
+    const col = document.createElement('col');
+    col.style.width = (saved[i] || naturalW[i]) + 'px';
+    colgroup.appendChild(col);
+    return col;
+  });
+  tableEl.insertBefore(colgroup, tableEl.firstChild);
+  tableEl.style.tableLayout = 'fixed';
+
+  const saveWidths = () => {
+    const w = {};
+    cols.forEach((c, i) => { w[i] = parseInt(c.style.width) || 0; });
+    try { localStorage.setItem('venc_colW', JSON.stringify(w)); } catch(e) {}
+  };
+
+  ths.forEach((th, i) => {
+    if (i === ths.length - 1) return; // última coluna (ações) não redimensiona
+    const handle = document.createElement('div');
+    handle.className = 'col-resize-handle';
+    handle.title = 'Arraste para redimensionar';
+    th.appendChild(handle);
+
+    handle.addEventListener('click', e => e.stopPropagation());
+    handle.addEventListener('mousedown', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      handle.classList.add('active');
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+
+      const startX = e.clientX;
+      const startW = cols[i].offsetWidth || parseInt(cols[i].style.width) || 80;
+
+      const onMove = ev => {
+        cols[i].style.width = Math.max(30, startW + ev.clientX - startX) + 'px';
+      };
+      const onUp = () => {
+        handle.classList.remove('active');
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        saveWidths();
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  });
+}
+
+function resetColWidths() {
+  try { localStorage.removeItem('venc_colW'); } catch(e) {}
+  filterVencidos();
 }
 
 function selecionarTodos(checked) {
