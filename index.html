@@ -1707,15 +1707,16 @@ function renderDashboard() {
   });
   const totalVencidoGeral = notasVencidasAtivas.reduce((s,n)=>s+Number(n.valor||0),0);
 
-  // Agrupamento por emTrativaCom
+  // Agrupamento por emTrativaCom — em branco conta como Financeiro (origem das ações)
+  const TRATATIVA_FINANCEIRO = { key:'Financeiro', color:'#16a34a', bg:'#f0fdf4', text:'#14532d', icon:'💰' };
   const gruposTratativa = {};
   notasVencidasAtivas.forEach(n => {
-    const key = n.emTrativaCom || '__sem__';
+    const key = n.emTrativaCom || 'Financeiro';
     if (!gruposTratativa[key]) gruposTratativa[key] = [];
     gruposTratativa[key].push(n);
   });
 
-  const ordemAreas = [...TRATATIVAS_AREAS.map(a=>a.key)];
+  const ordemAreas = ['Financeiro', ...TRATATIVAS_AREAS.map(a=>a.key)];
   const mapaCardsHtml = ordemAreas
     .filter(key => gruposTratativa[key]?.length > 0)
     .map(key => {
@@ -1723,7 +1724,7 @@ function renderDashboard() {
       const val   = grupo.reduce((s,n)=>s+Number(n.valor||0),0);
       const pct   = totalVencidoGeral>0 ? ((val/totalVencidoGeral)*100).toFixed(1) : '0.0';
       const qtd   = grupo.length;
-      const area  = key === '__sem__' ? { key:'Sem definição', color:'#9ca3af', bg:'#f3f4f6', text:'#374151', icon:'❓' } : getTratativaArea(key);
+      const area  = key === 'Financeiro' ? TRATATIVA_FINANCEIRO : getTratativaArea(key);
       return `
         <div onclick="abrirMapaTratativas('${key}')" style="cursor:pointer;border:2px solid ${area.color}50;border-radius:14px;padding:18px 20px;background:${area.bg};transition:box-shadow .15s" onmouseover="this.style.boxShadow='0 4px 16px ${area.color}30'" onmouseout="this.style.boxShadow='none'">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
@@ -4732,9 +4733,9 @@ function execImportFinal(){
       id:nId, nf, cliente, vendedor, empresa:empresa||'', emissao, vencimento,
       valor:Number(valor)||0, batchId,
       ...statusCampos,
-      emTrativaCom: emTrativaCom||'',
+      emTrativaCom: emTrativaCom||'Financeiro',
       historico:[{data:new Date().toISOString(),tipo:'Importação',
-        desc:`Importado via planilha: ${window._importFileName||'arquivo'}${statusImport?' | Status: '+statusImport:''}${emTrativaCom?' | Em tratativa: '+emTrativaCom:''}`}]
+        desc:`Importado via planilha: ${window._importFileName||'arquivo'}${statusImport?' | Status: '+statusImport:''}${emTrativaCom?' | Em tratativa: '+emTrativaCom:' | Em tratativa: Financeiro (padrão)'}`}]
     });
     imp++;
   });
