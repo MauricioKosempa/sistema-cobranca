@@ -3930,6 +3930,14 @@ function processFile(file){
     const mappings={nf:['nf','nota fiscal','nº nf','nota','número','numero','num'],cliente:['cliente','razão social','razao social','nome'],vencimento:['vencimento','venc','dt venc','data vencimento','data vcto','dt vcto'],valor:['valor da nota','valor','vlr','valor total','total'],vendedor:['vendedor','rep','representante'],emissao:['emissão','emissao','emis','dt emissão','data emissão','data emissao'],empresa:['empresa','filial','unidade','cia','companhia'],status:['status','situação','situacao','etapa'],emTrativaCom:['em tratativa','tratativa','pendencia','pendência','area responsavel','área responsável','responsavel','responsável']};
     const colMap={};
     Object.entries(mappings).forEach(([f,keys])=>{const idx=headers.findIndex(h=>keys.some(k=>h.includes(k)));if(idx>=0)colMap[f]=idx;});
+    // Fallback posicional: se campos críticos não foram detectados e arquivo tem 8 colunas,
+    // assume que é nosso template padrão (NF, Cliente, Vencimento, Valor, Empresa, Status, EmTrativaCom, Vendedor)
+    const camposCriticos = ['nf','cliente','vencimento','valor'];
+    const naoMapeados = camposCriticos.filter(f => colMap[f] === undefined).length;
+    if (naoMapeados >= 3 && headers.length >= 7) {
+      const posTemplate = {nf:0, cliente:1, vencimento:2, valor:3, empresa:4, status:5, emTrativaCom:6, vendedor:7};
+      Object.entries(posTemplate).forEach(([f,i]) => { if (colMap[f] === undefined && i < headers.length) colMap[f] = i; });
+    }
     window._irows=dataRows; window._ihdrs=headers; window._importFileName=file.name;
     const colSel=Object.keys(mappings).map(f=>`<div class="form-group"><label>${f.charAt(0).toUpperCase()+f.slice(1)}</label><select id="ci-${f}">
       <option value="">(não mapear)</option>
