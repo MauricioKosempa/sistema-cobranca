@@ -4166,9 +4166,37 @@ function openCliForm(id){
         </select>
         <button class="btn btn-danger btn-sm" onclick="mesclarCliente('${id}')">🔀 Mesclar</button>
       </div>
-    </div>` : ''}`);
+    </div>
+    ${(()=>{
+      const clienteNomes=new Set(DB.clientes.map(x=>x.nome));
+      const orfaos=[...new Set((DB.notas||[]).map(n=>n.cliente).filter(nc=>nc&&!clienteNomes.has(nc)))].sort((a,b)=>a.localeCompare(b,'pt-BR',{sensitivity:'base'}));
+      if(!orfaos.length) return '';
+      return '<hr style="margin:16px 0;border:none;border-top:1px solid var(--border)">'+
+        '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:14px 16px">'+
+        '<div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#1e40af;margin-bottom:6px">🔗 VINCULAR LANÇAMENTOS COM NOME ANTIGO</div>'+
+        '<p style="font-size:12px;color:#1e40af;margin:0 0 10px">Lançamentos cujo nome de cliente não corresponde a nenhum cadastro atual. Selecione um nome antigo para reatribuí-lo a <b>'+c.nome+'</b>.</p>'+
+        '<label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px">Nome antigo nos lançamentos</label>'+
+        '<div style="display:flex;gap:8px;align-items:center">'+
+        '<select id="cf-orfao" style="flex:1;border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-size:13px">'+
+        '<option value="">— Selecione o nome antigo —</option>'+
+        orfaos.map(o=>{const q=(DB.notas||[]).filter(n=>n.cliente===o).length;return '<option value="'+o+'">'+o+' ('+q+' lançamento'+(q!==1?'s':'')+')';}).join('')+
+        '</select>'+
+        '<button class="btn btn-primary btn-sm" onclick="vincularOrfao(\''+id+'\')">🔗 Vincular</button>'+
+        '</div></div>';
+    })()}` : ''}`);
 }
 function editCliente(id){openCliForm(id);}
+function vincularOrfao(id){
+  const cli=DB.clientes.find(x=>x.id===id);
+  const orfao=document.getElementById('cf-orfao')?.value;
+  if(!cli||!orfao){alert('Selecione um nome antigo.');return;}
+  let qtd=0;
+  (DB.notas||[]).forEach(n=>{if(n.cliente===orfao){n.cliente=cli.nome;qtd++;}});
+  (DB.crm||[]).forEach(c=>{if(c.cliente===orfao)c.cliente=cli.nome;});
+  saveDB();
+  alert(qtd+' lançamento(s) reatribuído(s) para "'+cli.nome+'".');
+  closeModal();renderClientes();
+}
 function saveCli(id){
   const nome=document.getElementById('cf-nome').value.trim();
   if(!nome){alert('Nome obrigatório');return;}
