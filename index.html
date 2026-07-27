@@ -4207,15 +4207,25 @@ function saveCli(id){
   const whats=whatsInputs[0]||'';
   const whatsAdicionais=whatsInputs.slice(1);
   const d={nome,doc:document.getElementById('cf-doc').value.trim(),email,emailsAdicionais,emailJur:document.getElementById('cf-ejur').value.trim(),whats,whatsAdicionais,vend1:document.getElementById('cf-v1').value,situacao:document.getElementById('cf-sit').value,obs:document.getElementById('cf-obs').value.trim()};
-  // Captura nome antigo antes de sobrescrever (para sync de lançamentos)
-  const oldNome = id ? (DB.clientes.find(x=>x.id===id)?.nome||'') : '';
+  // Captura dados antigos antes de sobrescrever (para sync de lançamentos)
+  const oldCli = id ? DB.clientes.find(x=>x.id===id) : null;
+  const oldNome = oldCli?.nome||'';
+  const oldVend = oldCli?.vend1||'';
   if(id){Object.assign(DB.clientes.find(x=>x.id===id),d);}else{DB.clientes.push({id:uid(),...d});}
-  // Sincroniza nome em lançamentos e CRM se o nome foi alterado
-  if(id && oldNome && oldNome !== nome){
-    let qtd = 0;
-    (DB.notas||[]).forEach(n=>{ if(n.cliente===oldNome){ n.cliente=nome; qtd++; } });
-    (DB.crm||[]).forEach(c=>{ if(c.cliente===oldNome) c.cliente=nome; });
-    if(qtd>0) console.info(`[saveCli] Nome atualizado em ${qtd} lançamento(s): "${oldNome}" → "${nome}"`);
+  if(id && oldNome){
+    // Sincroniza nome em lançamentos e CRM se o nome foi alterado
+    if(oldNome !== nome){
+      let qtd=0;
+      (DB.notas||[]).forEach(n=>{ if(n.cliente===oldNome){ n.cliente=nome; qtd++; } });
+      (DB.crm||[]).forEach(c=>{ if(c.cliente===oldNome) c.cliente=nome; });
+      if(qtd>0) console.info(`[saveCli] Nome atualizado em ${qtd} lançamento(s): "${oldNome}" → "${nome}"`);
+    }
+    // Sincroniza vendedor em lançamentos do cliente se o vendedor foi alterado
+    if(oldVend !== d.vend1){
+      let qtdV=0;
+      (DB.notas||[]).forEach(n=>{ if(n.cliente===nome){ n.vendedor=d.vend1; qtdV++; } });
+      if(qtdV>0) console.info(`[saveCli] Vendedor atualizado em ${qtdV} lançamento(s): "${oldVend}" → "${d.vend1}"`);
+    }
   }
   DB.clientes.sort((a,b)=>(a.nome||'').localeCompare(b.nome||'','pt-BR',{sensitivity:'base'}));
   saveDB();closeModal();renderClientes();
