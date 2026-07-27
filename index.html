@@ -4252,14 +4252,14 @@ function mesclarCliente(idPrincipal){
   const qtdNotas=DB.notas.filter(n=>n.cliente===duplicado.nome).length;
   const qtdCrm=(DB.crm||[]).filter(c=>c.cliente===duplicado.nome).length;
   if(!confirm(`Mesclar "${duplicado.nome}" em "${principal.nome}"?\n\n• ${qtdNotas} lançamento(s) serão transferidos\n• ${qtdCrm} registro(s) de CRM serão atualizados\n• O cadastro "${duplicado.nome}" será excluído\n\nEsta ação não pode ser desfeita.`))return;
-  // Transfere lançamentos
-  DB.notas.forEach(n=>{if(n.cliente===duplicado.nome)n.cliente=principal.nome;});
+  // Transfere lançamentos: atualiza nome e herda vendedor do principal
+  DB.notas.forEach(n=>{if(n.cliente===duplicado.nome){n.cliente=principal.nome;if(principal.vend1)n.vendedor=principal.vend1;}});
   // Transfere histórico CRM
   (DB.crm||[]).forEach(c=>{if(c.cliente===duplicado.nome)c.cliente=principal.nome;});
   // Remove o duplicado
   DB.clientes=DB.clientes.filter(x=>x.id!==idDup);
   saveDB();closeModal();renderClientes();
-  alert(`✅ Mesclagem concluída!\n• ${qtdNotas} lançamento(s) transferido(s)\n• ${qtdCrm} CRM atualizado(s)\n• "${duplicado.nome}" removido`);
+  alert(`✅ Mesclagem concluída!\n• ${qtdNotas} lançamento(s) transferido(s) com vendedor "${principal.vend1||'—'}"\n• ${qtdCrm} CRM atualizado(s)\n• "${duplicado.nome}" removido`);
 }
 
 /* ============================================================
