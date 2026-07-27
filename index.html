@@ -383,6 +383,7 @@ let _empresaFiltro = '';
 
 // Ordenação da tabela Vencidos
 let _vSort = { campo: 'atraso', dir: 'desc' }; // padrão: maior atraso primeiro
+let _notasFiltradas = []; // notas visíveis após filtro ativo em Recebimentos Vencidos
 
 function setSortVencidos(campo) {
   if (_vSort.campo === campo) {
@@ -2480,6 +2481,8 @@ function filterVencidos() {
     }
   });
 
+  _notasFiltradas = notas; // expõe para exportVencidos usar só o filtrado
+
   const rows = notas.map(n=>{
     const s=calcStatus(n), d=diasAtraso(n.vencimento);
     // Histórico CRM desta nota (para cor e tooltip)
@@ -3775,7 +3778,9 @@ function clearAguardar(id) {
 }
 
 function exportVencidos() {
-  const rows = DB.notas.map(n=>({
+  // Usa notas do filtro ativo; se nenhum filtro foi aplicado ainda, usa todas
+  const fonte = _notasFiltradas.length > 0 ? _notasFiltradas : DB.notas;
+  const rows = fonte.map(n=>({
     NF:n.nf, Empresa:n.empresa||'', Cliente:n.cliente, Vendedor:n.vendedor,
     Emissão:fmtDate(n.emissao), Vencimento:fmtDate(n.vencimento),
     Valor:Number(n.valor||0), 'Dias Atraso':diasAtraso(n.vencimento),
@@ -3788,7 +3793,7 @@ function exportVencidos() {
   const ws=XLSX.utils.json_to_sheet(rows);
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws,'Cobrança');
-  XLSX.writeFile(wb,`cobranca_${today()}.xlsx`);
+  XLSX.writeFile(wb,`cobranca_${_notasFiltradas.length>0&&_notasFiltradas.length<DB.notas.length?'filtrado_':''}${today()}.xlsx`);
 }
 
 /* ============================================================
@@ -4174,7 +4179,16 @@ function saveCli(id){
   const whats=whatsInputs[0]||'';
   const whatsAdicionais=whatsInputs.slice(1);
   const d={nome,doc:document.getElementById('cf-doc').value.trim(),email,emailsAdicionais,emailJur:document.getElementById('cf-ejur').value.trim(),whats,whatsAdicionais,vend1:document.getElementById('cf-v1').value,situacao:document.getElementById('cf-sit').value,obs:document.getElementById('cf-obs').value.trim()};
+  // Captura nome antigo antes de sobrescrever (para sync de lançamentos)
+  const oldNome = id ? (DB.clientes.find(x=>x.id===id)?.nome||'') : '';
   if(id){Object.assign(DB.clientes.find(x=>x.id===id),d);}else{DB.clientes.push({id:uid(),...d});}
+  // Sincroniza nome em lançamentos e CRM se o nome foi alterado
+  if(id && oldNome && oldNome !== nome){
+    let qtd = 0;
+    (DB.notas||[]).forEach(n=>{ if(n.cliente===oldNome){ n.cliente=nome; qtd++; } });
+    (DB.crm||[]).forEach(c=>{ if(c.cliente===oldNome) c.cliente=nome; });
+    if(qtd>0) console.info(`[saveCli] Nome atualizado em ${qtd} lançamento(s): "${oldNome}" → "${nome}"`);
+  }
   DB.clientes.sort((a,b)=>(a.nome||'').localeCompare(b.nome||'','pt-BR',{sensitivity:'base'}));
   saveDB();closeModal();renderClientes();
 }
