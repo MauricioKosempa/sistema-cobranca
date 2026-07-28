@@ -476,6 +476,21 @@ function fmtDate(d) { if (!d) return '—'; return new Date(d+'T00:00:00').toLoc
 function today() { return new Date().toISOString().split('T')[0]; }
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
 
+// ── Audit Log ────────────────────────────────────────────────────────────────
+function logAudit(acao, detalhe){
+  if(!DB.auditLog) DB.auditLog=[];
+  const u=_currentUser;
+  DB.auditLog.unshift({
+    ts: new Date().toISOString(),
+    user: u ? (u.name||u.email) : 'Sistema',
+    email: u?.email||'',
+    role: u?.role||'',
+    acao,
+    detalhe: detalhe||''
+  });
+  if(DB.auditLog.length>3000) DB.auditLog.length=3000;
+}
+
 // ── IndexedDB para anexos ─────────────────────────────────────────────────────
 let _idb = null;
 function initIDB() {
@@ -911,6 +926,8 @@ async function initUserSession(account) {
   document.getElementById('login-screen').style.display = 'none';
   atualizarNavPorPerfil();
   updateTopbar();
+  logAudit('Login', `Acesso ao sistema — perfil: ${_currentUser?.role||'?'}`);
+  saveDB();
   navigate('dashboard');
 }
 
@@ -2366,6 +2383,7 @@ function fecharMesInadimplencia() {
   if (!DB.historicoInadimplencia) DB.historicoInadimplencia = [];
   DB.historicoInadimplencia.push({mes:mesAtual, label, totalVencido, faturamento, taxa, qtdTitulos:notasMes.length, fechadoEm:new Date().toISOString()});
   DB.historicoInadimplencia.sort((a,b)=>a.mes.localeCompare(b.mes));
+  logAudit('Fechar Mês', `${label} — taxa ${taxa.toFixed(1)}% (vencido: ${fmt(totalVencido)} / faturamento: ${faturamento>0?fmt(faturamento):'não cadastrado'})`);
   saveDB();
   alert(`✅ ${label} fechado!\nVencido: ${fmt(totalVencido)} / Faturamento: ${faturamento>0?fmt(faturamento):'não cadastrado'}\nTaxa de inadimplência: ${taxa.toFixed(1)}%`);
   renderDashboard();
@@ -2388,6 +2406,7 @@ function fecharMesEspecifico(mes) {
   if (!DB.historicoInadimplencia) DB.historicoInadimplencia = [];
   DB.historicoInadimplencia.push({ mes, label, totalVencido, faturamento, taxa, qtdTitulos: notasMes.length, fechadoEm: new Date().toISOString() });
   DB.historicoInadimplencia.sort((a,b)=>a.mes.localeCompare(b.mes));
+  logAudit('Fechar Mês Específico', `${label} — taxa ${taxa.toFixed(1)}% (vencido: ${fmt(totalVencido)} / faturamento: ${faturamento>0?fmt(faturamento):'não cadastrado'})`);
   saveDB();
   alert(`✅ ${label} fechado!\nVencido: ${fmt(totalVencido)} / Faturamento: ${faturamento>0?fmt(faturamento):'não cadastrado'}\nTaxa registrada: ${taxa.toFixed(1)}%`);
   renderDashboard();
@@ -2649,7 +2668,9 @@ function excluirSelecionados() {
   const ids = [...document.querySelectorAll('.v-chk:checked')].map(cb => cb.dataset.id);
   if (!ids.length) return;
   if (!confirm(`⚠️ Confirmar exclusão de ${ids.length} lançamento(s) selecionado(s)?\n\nEsta ação não pode ser desfeita.`)) return;
+  const nomesExcluidos = DB.notas.filter(n=>ids.includes(n.id)).map(n=>`NF ${n.nf} — ${n.cliente}`).join('; ');
   DB.notas = DB.notas.filter(n => !ids.includes(n.id));
+  logAudit('Excluir Lançamentos', `${ids.length} lançamento(s) excluído(s): ${nomesExcluidos}`);
   saveDB();
   filterVencidos();
 }
@@ -2810,6 +2831,7 @@ function salvarReprogramacao(id) {
     n.dataReprogramacao = parcelas[parcelas.length-1].vencimento;
     n.parcelas = parcelas;
     addHist(n, 'Reparcelamento', `Dividido em ${qtd}x — última em ${fmtDate(n.dataReprogramacao)}${obs?' — '+obs:''}`);
+    logAudit('Reprogramação', `NF ${n.nf} — ${n.cliente} — Reparcelado em ${qtd}x, última em ${fmtDate(n.dataReprogramacao)}`);
     saveDB(); closeModal();
     if (currentPage==='vencidos') filterVencidos(); else renderDashboard();
     const toast = document.createElement('div');
@@ -2824,6 +2846,7 @@ function salvarReprogramacao(id) {
     n.dataReprogramacao = data;
     delete n.parcelas;
     addHist(n, 'Reprogramação', `Pagamento reprogramado para ${fmtDate(data)}${obs?' — '+obs:''}`);
+    logAudit('Reprogramação', `NF ${n.nf} — ${n.cliente} — Nova data: ${fmtDate(data)}`);
     saveDB(); closeModal();
     if (currentPage==='vencidos') filterVencidos(); else renderDashboard();
     const toast = document.createElement('div');
@@ -3093,6 +3116,7 @@ function saveNota(id) {
       emTrativaCom
     });
     if (changed.length) addHist(n, 'Edição', changed.join('; '));
+    logAudit('Editar Lançamento', `NF ${nf} — ${cli} — R$ ${fmtBR(valor)}${changed.length?' | '+changed.join('; '):''}`);
   } else {
     // Verifica duplicata
     if (DB.notas.find(n => n.nf === nf && n.cliente === cli)) {
@@ -3105,6 +3129,7 @@ function saveNota(id) {
       historico: [{ data: new Date().toISOString(), tipo: 'Lançamento Manual', desc: `Criado manualmente por operador` }]
     };
     DB.notas.push(nova);
+    logAudit('Novo Lançamento', `NF ${nf} — ${cli} — R$ ${fmtBR(valor)} — Venc: ${fmtDate(venc)}`);
   }
   saveDB();
   closeModal();
@@ -3747,6 +3772,7 @@ function flagCartorio(id) {
   if (!dt) return;
   n.dataCartorio = dt;
   addHist(n, 'Cartório', `Enviado ao Cartório em ${dt}`);
+  logAudit('Enviado ao Cartório', `NF ${n.nf} — ${n.cliente} — Data: ${fmtDate(dt)}`);
   saveDB(); filterVencidos(); alert('✅ Atualizado para "Enviado p/ Cartório"');
 }
 
@@ -3756,6 +3782,7 @@ function flagJuridico(id) {
   if (!dt) return;
   n.dataJuridico = dt;
   addHist(n, 'Jurídico', `Enviado ao Jurídico em ${dt}`);
+  logAudit('Enviado ao Jurídico', `NF ${n.nf} — ${n.cliente} — Data: ${fmtDate(dt)}`);
   saveDB(); filterVencidos(); alert('✅ Atualizado para "Jurídico"');
 }
 
@@ -3766,6 +3793,7 @@ function setBase(id, status) {
   n.baseStatus = status;
   if (status === 'pago' && !n.dataPagamento) n.dataPagamento = today();
   addHist(n, lbl, `Status alterado manualmente para ${lbl}`);
+  logAudit('Status: '+lbl, `NF ${n.nf} — ${n.cliente} — R$ ${fmtBR(n.valor)}`);
   saveDB(); if(currentPage==='vencidos') filterVencidos(); else renderDashboard();
 }
 
@@ -3773,6 +3801,7 @@ function clearAguardar(id) {
   const n = DB.notas.find(x=>x.id===id); if(!n) return;
   n.baseStatus = null;
   addHist(n, 'Retomado', 'Aguardar removido. Verifique encaminhamento ao Cartório.');
+  logAudit('Retomado (Aguardar)', `NF ${n.nf} — ${n.cliente}`);
   saveDB(); filterVencidos();
   alert('✅ Nota retomada. Se aplicável, envie ao Cartório.');
 }
@@ -4228,6 +4257,7 @@ function saveCli(id){
     }
   }
   DB.clientes.sort((a,b)=>(a.nome||'').localeCompare(b.nome||'','pt-BR',{sensitivity:'base'}));
+  logAudit(id ? 'Editar Cliente' : 'Novo Cliente', `${nome} — Vendedor: ${d.vend1||'—'}${oldNome&&oldNome!==nome?' (renomeado de "'+oldNome+'")':''}`);
   saveDB();closeModal();renderClientes();
 }
 function delCliente(id){
@@ -4239,6 +4269,7 @@ function delCliente(id){
     return;
   }
   if(!confirm(`Excluir o cliente "${c.nome}"?`))return;
+  logAudit('Excluir Cliente', `${c.nome}`);
   DB.clientes=DB.clientes.filter(x=>x.id!==id);
   saveDB();renderClientes();
 }
@@ -4258,6 +4289,7 @@ function mesclarCliente(idPrincipal){
   (DB.crm||[]).forEach(c=>{if(c.cliente===duplicado.nome)c.cliente=principal.nome;});
   // Remove o duplicado
   DB.clientes=DB.clientes.filter(x=>x.id!==idDup);
+  logAudit('Mesclar Clientes', `"${duplicado.nome}" absorvido por "${principal.nome}" — ${qtdNotas} lançamento(s) transferido(s)`);
   saveDB();closeModal();renderClientes();
   alert(`✅ Mesclagem concluída!\n• ${qtdNotas} lançamento(s) transferido(s) com vendedor "${principal.vend1||'—'}"\n• ${qtdCrm} CRM atualizado(s)\n• "${duplicado.nome}" removido`);
 }
@@ -5439,6 +5471,7 @@ function execImportFinal(){
     if(DB.importacoes.length > 10) DB.importacoes = DB.importacoes.slice(0, 10);
   }
 
+  logAudit('Importação de Planilha', `Arquivo: ${window._importFileName||'planilha'} — ${imp} importada(s), ${sub} substituída(s), ${skip} ignorada(s)`);
   saveDB();
   let resumo=`✅ Importação concluída!\n• <b>${imp}</b> notas importadas`;
   if(sub>0) resumo+=`\n• <b>${sub}</b> nota(s) substituída(s)`;
@@ -5980,7 +6013,149 @@ function renderParametros(){
         <button class="btn btn-primary" onclick="salvarPermissoes()">💾 Salvar Permissões</button>
         <span id="perm-status" style="font-size:12px;color:var(--text-muted)"></span>
       </div>
+    </div>
+
+    <div class="card" style="margin-top:24px">
+      <div class="card-title">📋 Histórico de Modificações</div>
+      <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px">Registro de todas as ações realizadas no sistema, com login, horário e descrição. Filtros por data e usuário.</p>
+      <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin-bottom:16px">
+        <div>
+          <label style="font-size:11px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">De</label>
+          <input type="date" id="audit-de" style="border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-size:13px">
+        </div>
+        <div>
+          <label style="font-size:11px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Até</label>
+          <input type="date" id="audit-ate" style="border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-size:13px">
+        </div>
+        <div>
+          <label style="font-size:11px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Usuário</label>
+          <select id="audit-user" style="border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-size:13px;min-width:160px">
+            <option value="">— Todos —</option>
+            ${[...new Set((DB.auditLog||[]).map(a=>a.email).filter(Boolean))].sort().map(e=>`<option value="${e}">${e}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label style="font-size:11px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Ação</label>
+          <select id="audit-acao" style="border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-size:13px;min-width:160px">
+            <option value="">— Todas —</option>
+            ${[...new Set((DB.auditLog||[]).map(a=>a.acao).filter(Boolean))].sort().map(a=>`<option value="${a}">${a}</option>`).join('')}
+          </select>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="renderAuditLog()">🔍 Filtrar</button>
+        <button class="btn btn-ghost btn-sm" onclick="exportAuditLog()">📥 Exportar XLSX</button>
+        ${isAdmin()?`<button class="btn btn-danger btn-sm" onclick="limparAuditLog()" style="margin-left:auto">🗑️ Limpar Histórico</button>`:''}
+      </div>
+      <div id="audit-table-wrap">
+        <p style="color:var(--text-muted);font-size:13px">Clique em 🔍 Filtrar para carregar o histórico.</p>
+      </div>
     </div>`;
+}
+
+function renderAuditLog(){
+  const de   = document.getElementById('audit-de')?.value||'';
+  const ate  = document.getElementById('audit-ate')?.value||'';
+  const user = document.getElementById('audit-user')?.value||'';
+  const acao = document.getElementById('audit-acao')?.value||'';
+
+  let logs = (DB.auditLog||[]).filter(a=>{
+    const dia = a.ts.slice(0,10);
+    if(de  && dia < de)  return false;
+    if(ate && dia > ate) return false;
+    if(user && a.email !== user) return false;
+    if(acao && a.acao !== acao)  return false;
+    return true;
+  });
+
+  const wrap = document.getElementById('audit-table-wrap');
+  if(!wrap) return;
+  if(!logs.length){ wrap.innerHTML='<p style="color:var(--text-muted);font-size:13px">Nenhum registro encontrado para os filtros selecionados.</p>'; return; }
+
+  const fmtTs = ts => {
+    const d = new Date(ts);
+    return d.toLocaleDateString('pt-BR')+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  };
+  const acaoCor = a => {
+    if(a.startsWith('Login')) return '#0284c7';
+    if(a.includes('Excluir')||a.includes('Limpar')) return '#dc2626';
+    if(a.startsWith('Status')) return '#d97706';
+    if(a.includes('Fechar')) return '#7c3aed';
+    if(a.includes('Import')) return '#0891b2';
+    return '#374151';
+  };
+
+  wrap.innerHTML=`
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:8px">${logs.length} registro(s) encontrado(s)</p>
+    <div style="overflow-x:auto;max-height:500px;overflow-y:auto">
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead style="position:sticky;top:0;background:#f8fafc;z-index:1">
+        <tr>
+          <th style="text-align:left;padding:8px 10px;border-bottom:2px solid var(--border);color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">Data / Hora</th>
+          <th style="text-align:left;padding:8px 10px;border-bottom:2px solid var(--border);color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px">Usuário</th>
+          <th style="text-align:left;padding:8px 10px;border-bottom:2px solid var(--border);color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px">Ação</th>
+          <th style="text-align:left;padding:8px 10px;border-bottom:2px solid var(--border);color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px">Detalhe</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${logs.map((a,i)=>`<tr style="background:${i%2===0?'#fff':'#f8fafc'}">
+          <td style="padding:7px 10px;border-bottom:1px solid var(--border);white-space:nowrap;color:var(--text-muted)">${fmtTs(a.ts)}</td>
+          <td style="padding:7px 10px;border-bottom:1px solid var(--border)">
+            <div style="font-weight:600;color:var(--text)">${a.user||'—'}</div>
+            <div style="font-size:10px;color:var(--text-muted)">${a.email||''}</div>
+          </td>
+          <td style="padding:7px 10px;border-bottom:1px solid var(--border)">
+            <span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;background:${acaoCor(a.acao)}18;color:${acaoCor(a.acao)}">${a.acao}</span>
+          </td>
+          <td style="padding:7px 10px;border-bottom:1px solid var(--border);color:var(--text);max-width:400px">${a.detalhe||'—'}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div>`;
+}
+
+function exportAuditLog(){
+  const de   = document.getElementById('audit-de')?.value||'';
+  const ate  = document.getElementById('audit-ate')?.value||'';
+  const user = document.getElementById('audit-user')?.value||'';
+  const acao = document.getElementById('audit-acao')?.value||'';
+
+  let logs = (DB.auditLog||[]).filter(a=>{
+    const dia = a.ts.slice(0,10);
+    if(de  && dia < de)  return false;
+    if(ate && dia > ate) return false;
+    if(user && a.email !== user) return false;
+    if(acao && a.acao !== acao)  return false;
+    return true;
+  });
+
+  if(!logs.length){ alert('Nenhum registro para exportar.'); return; }
+
+  const fmtTs = ts => {
+    const d = new Date(ts);
+    return d.toLocaleDateString('pt-BR')+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  };
+
+  const rows = logs.map(a=>({
+    'Data/Hora': fmtTs(a.ts),
+    'Usuário': a.user||'',
+    'E-mail': a.email||'',
+    'Perfil': a.role||'',
+    'Ação': a.acao||'',
+    'Detalhe': a.detalhe||''
+  }));
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [{wch:22},{wch:24},{wch:32},{wch:10},{wch:26},{wch:60}];
+  XLSX.utils.book_append_sheet(wb, ws, 'Histórico');
+  const suf = de||ate ? `_${de||'inicio'}_a_${ate||'fim'}` : '';
+  XLSX.writeFile(wb, `historico_modificacoes${suf}_${today()}.xlsx`);
+}
+
+function limparAuditLog(){
+  if(!isAdmin()){alert('⛔ Somente administradores.');return;}
+  if(!confirm('⚠️ Deseja apagar TODO o histórico de modificações?\n\nEsta ação não pode ser desfeita.'))return;
+  DB.auditLog=[];
+  saveDB();
+  renderParametros();
 }
 
 function adicionarEmailPerfil(tipo) {
