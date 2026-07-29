@@ -4167,7 +4167,14 @@ function openCliForm(id){
         </div>
         <div id="cf-whats-list">${buildWhatsCliRows(c)}</div>
       </div>
-      <div class="form-group"><label>Vendedor 1</label><select id="cf-v1">${buildVendOpts(c?.vend1||'')}</select></div>
+      <div class="form-group">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <label style="margin:0">Vendedor 1</label>
+          ${id?`<button type="button" class="btn btn-ghost btn-xs" style="color:#0284c7" onclick="syncVendedorNow('${id}')" title="Aplica o vendedor selecionado em todos os lançamentos deste cliente agora">🔄 Sincronizar lançamentos</button>`:''}
+        </div>
+        <select id="cf-v1" style="width:100%">${buildVendOpts(c?.vend1||'')}</select>
+        ${id?`<p style="font-size:11px;color:var(--text-muted);margin:4px 0 0">Ao salvar, o vendedor será aplicado automaticamente a todos os lançamentos deste cliente.</p>`:''}
+      </div>
 
       <div class="form-group"><label>Situação</label><select id="cf-sit">
         <option ${!c?.situacao||c.situacao==='Ativo'?'selected':''}>Ativo</option>
@@ -4215,6 +4222,19 @@ function openCliForm(id){
     })()}` : ''}`);
 }
 function editCliente(id){openCliForm(id);}
+function syncVendedorNow(id){
+  const cli=DB.clientes.find(x=>x.id===id);
+  const vend=document.getElementById('cf-v1')?.value;
+  if(!cli||!vend){alert('Selecione um vendedor antes de sincronizar.');return;}
+  const qtd=(DB.notas||[]).filter(n=>n.cliente===cli.nome).length;
+  if(!qtd){alert('Nenhum lançamento encontrado para este cliente.');return;}
+  if(!confirm(`Aplicar vendedor "${vend}" em ${qtd} lançamento(s) de "${cli.nome}"?\n\nIsso substituirá o vendedor atual em todos os lançamentos deste cliente.`))return;
+  let atualizado=0;
+  (DB.notas||[]).forEach(n=>{if(n.cliente===cli.nome){n.vendedor=vend;atualizado++;}});
+  logAudit('Sync Vendedor Manual',`"${cli.nome}" → ${atualizado} lançamento(s) atualizados para "${vend}"`);
+  saveDB();
+  alert(`✅ ${atualizado} lançamento(s) atualizados com vendedor "${vend}".`);
+}
 function vincularOrfao(id){
   const cli=DB.clientes.find(x=>x.id===id);
   const orfao=document.getElementById('cf-orfao')?.value;
@@ -4249,11 +4269,11 @@ function saveCli(id){
       (DB.crm||[]).forEach(c=>{ if(c.cliente===oldNome) c.cliente=nome; });
       if(qtd>0) console.info(`[saveCli] Nome atualizado em ${qtd} lançamento(s): "${oldNome}" → "${nome}"`);
     }
-    // Sincroniza vendedor em lançamentos do cliente se o vendedor foi alterado
-    if(oldVend !== d.vend1){
+    // Sincroniza vendedor em TODOS os lançamentos do cliente (sempre, não só quando muda)
+    if(d.vend1){
       let qtdV=0;
       (DB.notas||[]).forEach(n=>{ if(n.cliente===nome){ n.vendedor=d.vend1; qtdV++; } });
-      if(qtdV>0) console.info(`[saveCli] Vendedor atualizado em ${qtdV} lançamento(s): "${oldVend}" → "${d.vend1}"`);
+      if(qtdV>0) console.info(`[saveCli] Vendedor "${d.vend1}" aplicado em ${qtdV} lançamento(s) de "${nome}"`);
     }
   }
   DB.clientes.sort((a,b)=>(a.nome||'').localeCompare(b.nome||'','pt-BR',{sensitivity:'base'}));
