@@ -2443,6 +2443,12 @@ function renderVencidos() {
             <option value="">Todos os vendedores</option>
             ${DB.vendedores.map(v=>`<option>${v.nome}</option>`).join('')}
           </select>
+          <div style="display:flex;align-items:center;gap:6px;white-space:nowrap">
+            <label style="font-size:12px;color:var(--text-muted);margin:0">Vencimento:</label>
+            <input type="date" id="v-de" oninput="filterVencidos()" style="font-size:12px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);color:var(--text)" title="Data inicial">
+            <span style="font-size:12px;color:var(--text-muted)">até</span>
+            <input type="date" id="v-ate" oninput="filterVencidos()" style="font-size:12px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);color:var(--text)" title="Data final">
+          </div>
         </div>
         <div class="gap-8" style="margin-left:10px;flex-shrink:0">
           <button id="btn-ver-reprog" class="btn btn-ghost btn-sm" onclick="toggleFiltroReprog()"
@@ -2479,6 +2485,8 @@ function filterVencidos() {
   const sf = document.getElementById('v-status')?.value||'';
   const vf = document.getElementById('v-vend')?.value||'';
   const ef = document.getElementById('v-emp')?.value||'';
+  const de  = document.getElementById('v-de')?.value||'';
+  const ate = document.getElementById('v-ate')?.value||'';
   const notas = DB.notas.filter(n=>{
     const s=calcStatus(n);
     if (_filtroReprogAtivo) {
@@ -2488,6 +2496,8 @@ function filterVencidos() {
     if(sf&&s!==sf) return false;
     if(vf&&n.vendedor!==vf) return false;
     if(ef&&n.empresa!==ef) return false;
+    if(de&&(n.vencimento||'')<de) return false;
+    if(ate&&(n.vencimento||'')>ate) return false;
     if(q&&!`${n.nf} ${n.cliente} ${n.vendedor} ${n.empresa||''}`.toLowerCase().includes(q)) return false;
     return true;
   }).sort((a,b)=>{
