@@ -2715,7 +2715,7 @@ function buildActionBtns(n, s) {
 
 function abrirReprogramacao(id) {
   const n = DB.notas.find(x=>x.id===id); if(!n) return;
-  if (n.reprogramado && diasAtraso(n.dataReprogramacao||'') > 0) {
+  if (n.reprogramado && diasAtraso(n.dataReprogramacao||'') > 0 && !isGestor()) {
     alert('⚠️ Este título já foi reprogramado e a data venceu.\nEnvie ao Cartório — nova reprogramação não é permitida.');
     return;
   }
@@ -3003,9 +3003,9 @@ function openNotaForm(id) {
             <option value="processo_judicial" ${n.baseStatus==='processo_judicial'?'selected':''}>🔴 Processo Judicial</option>
           </optgroup>
           <optgroup label="— Reprogramação de pagamento —">
-            <option value="reprogramar" ${n.reprogramado&&n.dataReprogramacao&&!n.reprogramado_expirado?'selected':''}
-              ${n.reprogramado&&diasAtraso(n.dataReprogramacao||'')>0?'disabled title="Já reprogramado e expirado — enviar ao Cartório"':''}>
-              🔄 Reprogramar pagamento${n.reprogramado?' (já utilizado)':''}
+            <option value="reprogramar" ${n.reprogramado&&n.dataReprogramacao?'selected':''}
+              ${n.reprogramado&&diasAtraso(n.dataReprogramacao||'')>0&&!isGestor()?'disabled title="Já reprogramado e expirado — enviar ao Cartório"':''}>
+              🔄 Reprogramar pagamento${n.reprogramado&&diasAtraso(n.dataReprogramacao||'')>0&&isGestor()?' (corrigir data — Admin/Gestor)':n.reprogramado?' (já utilizado)':''}
             </option>
           </optgroup>
           <optgroup label="— Status finais —">
@@ -3032,13 +3032,14 @@ function openNotaForm(id) {
         <input type="date" id="nf-dt-pago" value="${n.dataPagamento||today()}">
       </div>
 
-      <div class="form-group" id="nf-dt-reprog-wrap" style="${n.reprogramado&&n.dataReprogramacao&&diasAtraso(n.dataReprogramacao||'')<=0?'':'display:none'}">
+      <div class="form-group" id="nf-dt-reprog-wrap" style="${n.reprogramado&&n.dataReprogramacao&&(diasAtraso(n.dataReprogramacao||'')<=0||isGestor())?'':'display:none'}">
         <label>📅 Nova data de pagamento programada</label>
         <input type="date" id="nf-dt-reprog" value="${n.dataReprogramacao||''}">
         <span style="font-size:11px;color:#065f46;margin-top:3px;display:block">
           ${n.reprogramado?`⚠️ Este título já foi reprogramado. Vencimento original: <b>${fmtDate(n.vencimento)}</b>. Ao vencer novamente, será enviado ao Cartório automaticamente.`:'Informe a nova data comprometida pelo cliente. O título sairá da inadimplência até essa data.'}
         </span>
-        ${n.reprogramado&&diasAtraso(n.dataReprogramacao||'')>0?`<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:6px;padding:8px 10px;margin-top:6px;font-size:12px;color:#b91c1c;font-weight:600">⚠️ Data de reprogramação vencida — este título deve ser enviado ao Cartório. Nova reprogramação não é permitida.</div>`:''}
+        ${n.reprogramado&&diasAtraso(n.dataReprogramacao||'')>0&&!isGestor()?`<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:6px;padding:8px 10px;margin-top:6px;font-size:12px;color:#b91c1c;font-weight:600">⚠️ Data de reprogramação vencida — este título deve ser enviado ao Cartório. Nova reprogramação não é permitida.</div>`:''}
+        ${n.reprogramado&&diasAtraso(n.dataReprogramacao||'')>0&&isGestor()?`<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;padding:8px 10px;margin-top:6px;font-size:12px;color:#92400e;font-weight:600">🔧 Modo correção (Admin/Gestor) — altere a data e salve para corrigir o erro de reprogramação.</div>`:''}
       </div>
     </div>` : ''}
     <div class="form-actions">
@@ -3088,8 +3089,8 @@ function saveNota(id) {
                                dataJuridico = document.getElementById('nf-dt-juridico')?.value || today(); }
   if (etapa === 'processo_judicial') { base = 'processo_judicial'; }
   if (etapa === 'reprogramar') {
-    // Verificar se já foi reprogramado e está expirado → bloquear
-    if (id) {
+    // Verificar se já foi reprogramado e está expirado → bloquear (exceto Admin/Gestor que podem corrigir a data)
+    if (id && !isGestor()) {
       const nExist = DB.notas.find(x => x.id === id);
       if (nExist?.reprogramado && nExist.dataReprogramacao && diasAtraso(nExist.dataReprogramacao) > 0) {
         alert('⚠️ Este título já foi reprogramado e a data venceu.\nNão é possível reprogramar novamente. Envie ao Cartório.');
