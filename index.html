@@ -203,6 +203,7 @@
   <div class="logo"><span>📋</span> Cobrança</div>
   <nav id="nav-links">
     <a class="active" data-page="dashboard"><span class="icon">📊</span> Dashboard</a>
+    <a data-page="contas-receber"><span class="icon">📋</span> Contas a Receber</a>
     <a data-page="vencidos"><span class="icon">🔴</span> Recebimentos Vencidos</a>
     <a data-page="crm"><span class="icon">💬</span> CRM – Tratativas</a>
     <a data-page="vendedores"><span class="icon">👤</span> Cadastro de Vendedores</a>
@@ -687,14 +688,14 @@ function isGestor() {
 // ── SISTEMA DE PERMISSÕES CONFIGURÁVEIS ──────────────────────────────────────
 const PERM_DEFAULTS = {
   gestor: {
-    vencidos:'modificar', crm:'modificar', vendedores:'modificar',
+    contasReceber:'modificar', vencidos:'modificar', crm:'modificar', vendedores:'modificar',
     clientes:'modificar', importar:'modificar', parametros:'ocultar',
     templates:'modificar', configuracoes:'ocultar',
     gerarRelatorio:'modificar', exportarPlanilha:'modificar',
     enviarEmail:'modificar', enviarWhatsapp:'modificar'
   },
   consulta: {
-    vencidos:'consultar', crm:'consultar', vendedores:'consultar',
+    contasReceber:'consultar', vencidos:'consultar', crm:'consultar', vendedores:'consultar',
     clientes:'consultar', importar:'ocultar', parametros:'ocultar',
     templates:'ocultar', configuracoes:'ocultar',
     gerarRelatorio:'consultar', exportarPlanilha:'consultar',
@@ -967,7 +968,7 @@ async function logoutMs() {
 
 function atualizarNavPorPerfil() {
   const pageToFeat = {
-    vencidos:'vencidos', crm:'crm', vendedores:'vendedores', clientes:'clientes',
+    'contas-receber':'contasReceber', vencidos:'vencidos', crm:'crm', vendedores:'vendedores', clientes:'clientes',
     importar:'importar', parametros:'parametros', templates:'templates', configuracoes:'configuracoes'
   };
   document.querySelectorAll('#nav-links a').forEach(a => {
@@ -1645,8 +1646,9 @@ function sendWhatsAppSilent(nota) {
    NAVIGATION
 ============================================================ */
 const PAGES = {
-  dashboard:    { title: 'Dashboard',               render: renderDashboard },
-  vencidos:     { title: 'Recebimentos Vencidos',   render: renderVencidos },
+  dashboard:       { title: 'Dashboard',               render: renderDashboard },
+  'contas-receber':{ title: 'Contas a Receber',         render: renderContasReceber },
+  vencidos:        { title: 'Recebimentos Vencidos',   render: renderVencidos },
   crm:          { title: 'CRM – Histórico de Tratativas', render: renderCRM },
   vendedores:   { title: 'Cadastro de Vendedores',  render: renderVendedores },
   clientes:     { title: 'Cadastro de Clientes',    render: renderClientes },
@@ -1660,7 +1662,7 @@ let currentPage = 'dashboard';
 function navigate(page) {
   if (!isAdmin() && page !== 'dashboard') {
     const pageToFeat = {
-      vencidos:'vencidos', crm:'crm', vendedores:'vendedores', clientes:'clientes',
+      'contas-receber':'contasReceber', vencidos:'vencidos', crm:'crm', vendedores:'vendedores', clientes:'clientes',
       importar:'importar', parametros:'parametros', templates:'templates', configuracoes:'configuracoes'
     };
     const feat = pageToFeat[page];
@@ -2425,6 +2427,179 @@ function reabrirMes(mes) {
 /* ============================================================
    VENCIDOS
 ============================================================ */
+/* ============================================================
+   CONTAS A RECEBER
+============================================================ */
+let _crSort = { campo: 'vencimento', dir: 'asc' };
+let _crFiltradas = [];
+
+function setSortCR(campo) {
+  if (_crSort.campo === campo) _crSort.dir = _crSort.dir === 'asc' ? 'desc' : 'asc';
+  else { _crSort.campo = campo; _crSort.dir = 'asc'; }
+  filterContasReceber();
+}
+
+function renderContasReceber() {
+  document.getElementById('content').innerHTML = `
+    <div class="card">
+      <div class="flex-between mb-16">
+        <div class="search-bar" style="flex:1;margin-bottom:0">
+          <input class="main" id="cr-q" placeholder="Buscar NF, cliente, vendedor..." oninput="filterContasReceber()">
+          <select id="cr-emp" onchange="filterContasReceber()">
+            <option value="">Todas as empresas</option>
+            ${(DB.empresas||[]).map(e=>`<option>${e}</option>`).join('')}
+          </select>
+          <select id="cr-vend" onchange="filterContasReceber()">
+            <option value="">Todos os vendedores</option>
+            ${DB.vendedores.map(v=>`<option>${v.nome}</option>`).join('')}
+          </select>
+          <div style="display:flex;align-items:center;gap:6px;white-space:nowrap">
+            <label style="font-size:12px;color:var(--text-muted);margin:0">Vencimento:</label>
+            <input type="date" id="cr-de" oninput="filterContasReceber()" style="font-size:12px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);color:var(--text)" title="Data inicial">
+            <span style="font-size:12px;color:var(--text-muted)">até</span>
+            <input type="date" id="cr-ate" oninput="filterContasReceber()" style="font-size:12px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);color:var(--text)" title="Data final">
+          </div>
+        </div>
+        <div class="gap-8" style="margin-left:10px;flex-shrink:0">
+          ${canModify('contasReceber') ? `<button class="btn btn-primary btn-sm" onclick="openNotaForm()">➕ Novo Lançamento</button>` : ''}
+          ${canView('exportarPlanilha') ? `<button class="btn btn-ghost btn-sm" onclick="exportContasReceber()">📥 Exportar</button>` : ''}
+        </div>
+      </div>
+      <div class="tbl-wrap" id="cr-tbl"></div>
+    </div>`;
+  filterContasReceber();
+}
+
+function filterContasReceber() {
+  const q   = (document.getElementById('cr-q')?.value||'').toLowerCase();
+  const ef  = document.getElementById('cr-emp')?.value||'';
+  const vf  = document.getElementById('cr-vend')?.value||'';
+  const de  = document.getElementById('cr-de')?.value||'';
+  const ate = document.getElementById('cr-ate')?.value||'';
+
+  const notas = DB.notas.filter(n=>{
+    const s = calcStatus(n);
+    // Só exibe a_vencer e reprogramado (não expirado)
+    if (s !== 'a_vencer' && s !== 'reprogramado') return false;
+    if (ef && n.empresa !== ef) return false;
+    if (vf && n.vendedor !== vf) return false;
+    // Filtro de data usa a data efetiva (reprogramada ou original)
+    const dataEfetiva = s === 'reprogramado' ? (n.dataReprogramacao||n.vencimento) : n.vencimento;
+    if (de  && dataEfetiva < de)  return false;
+    if (ate && dataEfetiva > ate) return false;
+    if (q && !`${n.nf} ${n.cliente} ${n.vendedor} ${n.empresa||''}`.toLowerCase().includes(q)) return false;
+    return true;
+  }).sort((a,b)=>{
+    const dir = _crSort.dir === 'asc' ? 1 : -1;
+    const sa = calcStatus(a), sb = calcStatus(b);
+    const da = sa==='reprogramado'?(a.dataReprogramacao||a.vencimento):a.vencimento;
+    const db = sb==='reprogramado'?(b.dataReprogramacao||b.vencimento):b.vencimento;
+    switch(_crSort.campo) {
+      case 'nf':       return dir*(a.nf||'').localeCompare(b.nf||'','pt-BR',{numeric:true});
+      case 'cliente':  return dir*(a.cliente||'').localeCompare(b.cliente||'','pt-BR');
+      case 'vencimento': return dir*(da||'').localeCompare(db||'');
+      case 'valor':    return dir*(Number(a.valor||0)-Number(b.valor||0));
+      default:         return dir*(da||'').localeCompare(db||'');
+    }
+  });
+
+  _crFiltradas = notas;
+
+  if (!notas.length) {
+    document.getElementById('cr-tbl').innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted)">Nenhum título a receber encontrado.</div>';
+    return;
+  }
+
+  const cols = [
+    {l:'NF',c:'nf'},{l:'Cliente',c:'cliente'},{l:'Vencimento',c:'vencimento'},
+    {l:'Dias a Vencer',c:'vencimento'},{l:'Empresa',c:''},{l:'Vendedor',c:''},{l:'Valor',c:'valor'},
+    {l:'Status',c:''},{l:'Observação',c:''},{l:'Ações',c:''}
+  ];
+
+  const rows = notas.map(n=>{
+    const s = calcStatus(n);
+    const dataEfetiva = s==='reprogramado'?(n.dataReprogramacao||n.vencimento):n.vencimento;
+    const diasAVencer = -diasAtraso(dataEfetiva); // positivo = dias restantes
+    const corDias = diasAVencer <= 3 ? 'color:#b45309;font-weight:700' : diasAVencer <= 7 ? 'color:#d97706;font-weight:600' : 'color:#16a34a';
+    const crmNota = (DB.crm||[]).filter(c=>c.notaId===n.id);
+    const temCrm  = crmNota.length > 0;
+    const ultimaTrat = temCrm ? crmNota[crmNota.length-1].tratativa.substring(0,80) : '';
+    const tooltipCrm = temCrm ? `${crmNota.length} tratativa(s). Última: ${ultimaTrat}${ultimaTrat.length===80?'…':''}` : '';
+
+    return `<tr id="cr-row-${n.id}">
+      <td><b>${n.nf||'—'}</b></td>
+      <td>${n.cliente||'—'}</td>
+      <td>${fmtDate(dataEfetiva)}${s==='reprogramado'?`<br><span style="font-size:10px;color:#6b7280">(orig: ${fmtDate(n.vencimento)})</span>`:''}</td>
+      <td style="${corDias};text-align:center">${diasAVencer >= 0 ? diasAVencer+'d' : 'Hoje'}</td>
+      <td><span style="font-size:11px;background:var(--primary);color:#fff;padding:1px 6px;border-radius:10px;white-space:nowrap">${n.empresa||'—'}</span></td>
+      <td>${n.vendedor||'—'}</td>
+      <td class="text-right">${fmt(n.valor)}</td>
+      <td>${statusBadge(s)}${n.parcelas?.length?`<br><span style="font-size:10px;color:#065f46">📦 ${n.parcelas.filter(p=>p.pago).length}/${n.parcelas.length} parcelas</span>`:''}</td>
+      <td title="${tooltipCrm}" style="min-width:200px;white-space:normal">
+        <div style="display:flex;flex-direction:column;gap:4px">
+          ${canModify('contasReceber')
+            ? `<input type="text" value="" placeholder="${temCrm?'+ Nova tratativa...':'Observação...'}" onblur="salvarObs('${n.id}',this.value)" onkeydown="if(event.key==='Enter'){salvarObs('${n.id}',this.value);this.value='';event.preventDefault();}" style="width:100%;border:1px solid var(--border);border-radius:5px;padding:4px 8px;font-size:12px;color:var(--text);background:${temCrm?'#fefce8':'#fff'}">`
+            : `<span style="font-size:12px;color:var(--text-muted)">${temCrm?`💬 ${crmNota.length} tratativa(s)`:'-'}</span>`}
+        </div>
+      </td>
+      <td>
+        <div class="gap-8">
+          ${canModify('contasReceber')?`<button class="flag-btn" style="background:#dcfce7;color:#15803d;font-weight:700" onclick="pagarContasReceber('${n.id}')">✅ Pago</button>`:''}
+          <button class="btn btn-ghost btn-xs" title="Anexos (${(n.anexos||[]).length})" onclick="openAnexosModal('nota','${n.id}')">📎${(n.anexos||[]).length>0?`<span style="background:#3b82f6;color:#fff;font-size:10px;font-weight:700;padding:1px 4px;border-radius:10px;margin-left:2px">${(n.anexos||[]).length}</span>`:''}</button>
+          <button class="btn btn-ghost btn-xs" title="Ver detalhes" onclick="openNotaModal('${n.id}')">📋</button>
+          ${canModify('contasReceber')?`<button class="btn btn-ghost btn-xs" title="Editar" onclick="openNotaForm('${n.id}')">✏️</button><button class="btn btn-ghost btn-xs" title="Excluir" onclick="excluirNota('${n.id}')" style="color:var(--danger)">🗑️</button>`:''}
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+
+  const mkTh = (l,c) => {
+    const ativo = _crSort.campo===c&&c;
+    const seta = ativo?(_crSort.dir==='asc'?'▲':'▼'):'';
+    return `<th${c?` onclick="setSortCR('${c}')" style="cursor:pointer;user-select:none;white-space:nowrap${ativo?';color:var(--primary);font-weight:800':''}" title="Ordenar por ${l}"`:''} >${l}${seta}</th>`;
+  };
+
+  document.getElementById('cr-tbl').innerHTML = `
+    <table><thead><tr>
+      ${cols.map(({l,c})=>mkTh(l,c)).join('')}
+    </tr></thead><tbody>${rows}</tbody></table>
+    <div style="padding:10px 0;font-size:12px;color:var(--text-muted)">
+      ${notas.length} título(s) · Total: <b>${fmt(notas.reduce((s,n)=>s+Number(n.valor||0),0))}</b>
+    </div>`;
+}
+
+function pagarContasReceber(id) {
+  const n = DB.notas.find(x=>x.id===id); if(!n) return;
+  if (!confirm(`✅ Confirmar recebimento:\n\nNF ${n.nf} — ${n.cliente}\nValor: ${fmt(n.valor)}\nVencimento: ${fmtDate(n.vencimento)}\n\nO título será baixado como Pago.`)) return;
+  n.baseStatus = 'pago';
+  if (!n.dataPagamento) n.dataPagamento = today();
+  addHist(n, 'Pago', 'Baixado como pago via Contas a Receber');
+  logAudit('Pago (Contas a Receber)', `NF ${n.nf} — ${n.cliente} — R$ ${fmtBR(n.valor)}`);
+  saveDB(); filterContasReceber();
+}
+
+function exportContasReceber() {
+  const notas = _crFiltradas.length ? _crFiltradas : DB.notas.filter(n=>{ const s=calcStatus(n); return s==='a_vencer'||s==='reprogramado'; });
+  if (!notas.length) { alert('Nenhum dado para exportar.'); return; }
+  const wb = XLSX.utils.book_new();
+  const rows = [['NF','Cliente','Vencimento Efetivo','Vencimento Original','Dias a Vencer','Empresa','Vendedor','Valor','Status']];
+  notas.forEach(n=>{
+    const s=calcStatus(n);
+    const de=s==='reprogramado'?(n.dataReprogramacao||n.vencimento):n.vencimento;
+    rows.push([n.nf,n.cliente,fmtDate(de),fmtDate(n.vencimento),-diasAtraso(de),n.empresa||'',n.vendedor||'',Number(n.valor||0),STATUS_LABELS[s]||s]);
+  });
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  XLSX.utils.book_append_sheet(wb,ws,'Contas a Receber');
+  XLSX.writeFile(wb,'contas_a_receber_'+today()+'.xlsx');
+}
+
+// Helper: re-renderiza a página de recebimentos ativa (Contas a Receber ou Vencidos) ou Dashboard
+function _reRenderCurrentReceivables() {
+  if (currentPage === 'contas-receber') filterContasReceber();
+  else if (currentPage === 'vencidos') filterVencidos();
+  else renderDashboard();
+}
+
 function renderVencidos() {
   document.getElementById('content').innerHTML = `
     <div class="card">
@@ -2489,8 +2664,11 @@ function filterVencidos() {
   const ate = document.getElementById('v-ate')?.value||'';
   const notas = DB.notas.filter(n=>{
     const s=calcStatus(n);
+    // Recebimentos Vencidos nunca mostra a_vencer nem reprogramado (não expirado) — esses ficam em Contas a Receber
+    if(s==='a_vencer') return false;
+    if(s==='reprogramado') return false;
     if (_filtroReprogAtivo) {
-      // Modo reprogramados: mostrar apenas os que têm reprogramação
+      // Modo reprogramados expirados: notas que foram reprogramadas mas a data venceu novamente
       if (!n.reprogramado) return false;
     }
     if(sf&&s!==sf) return false;
@@ -2848,7 +3026,7 @@ function salvarReprogramacao(id) {
     addHist(n, 'Reparcelamento', `Dividido em ${qtd}x — última em ${fmtDate(n.dataReprogramacao)}${obs?' — '+obs:''}`);
     logAudit('Reprogramação', `NF ${n.nf} — ${n.cliente} — Reparcelado em ${qtd}x, última em ${fmtDate(n.dataReprogramacao)}`);
     saveDB(); closeModal();
-    if (currentPage==='vencidos') filterVencidos(); else renderDashboard();
+    _reRenderCurrentReceivables();
     const toast = document.createElement('div');
     toast.style.cssText='position:fixed;bottom:24px;right:24px;background:#065f46;color:#fff;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:600;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.2)';
     toast.textContent=`✅ Reparcelado em ${qtd}x! Última parcela em ${fmtDate(n.dataReprogramacao)}`;
@@ -2863,7 +3041,7 @@ function salvarReprogramacao(id) {
     addHist(n, 'Reprogramação', `Pagamento reprogramado para ${fmtDate(data)}${obs?' — '+obs:''}`);
     logAudit('Reprogramação', `NF ${n.nf} — ${n.cliente} — Nova data: ${fmtDate(data)}`);
     saveDB(); closeModal();
-    if (currentPage==='vencidos') filterVencidos(); else renderDashboard();
+    _reRenderCurrentReceivables();
     const toast = document.createElement('div');
     toast.style.cssText='position:fixed;bottom:24px;right:24px;background:#065f46;color:#fff;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:600;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.2)';
     toast.textContent='✅ Reprogramado! Título saiu da inadimplência até '+fmtDate(data);
@@ -2941,7 +3119,7 @@ function marcarParcelaPaga(id, idx) {
   }
   saveDB();
   verParcelas(id);
-  if (currentPage==='vencidos') filterVencidos(); else renderDashboard();
+  _reRenderCurrentReceivables();
 }
 
 /* ============================================================
@@ -3149,8 +3327,15 @@ function saveNota(id) {
   }
   saveDB();
   closeModal();
-  if (currentPage === 'vencidos') filterVencidos();
-  else renderDashboard();
+  // Ao criar novo lançamento: navega para a seção correta conforme vencimento
+  if (!id) {
+    const statusNova = diasAtraso(venc) <= 0 ? 'a_vencer' : 'vencido';
+    if (statusNova === 'a_vencer' && currentPage !== 'contas-receber') navigate('contas-receber');
+    else if (statusNova === 'vencido' && currentPage !== 'vencidos') navigate('vencidos');
+    else _reRenderCurrentReceivables();
+  } else {
+    _reRenderCurrentReceivables();
+  }
 }
 
 function abrirMapaTratativas(areaKey) {
@@ -3779,7 +3964,7 @@ function excluirNota(id) {
   if (!confirm(`Excluir a nota ${n.nf || id} do cliente "${n.cliente}"?\n\nEssa ação não pode ser desfeita.`)) return;
   DB.notas = DB.notas.filter(x => x.id !== id);
   saveDB();
-  filterVencidos();
+  _reRenderCurrentReceivables();
 }
 
 function flagCartorio(id) {
@@ -3789,7 +3974,7 @@ function flagCartorio(id) {
   n.dataCartorio = dt;
   addHist(n, 'Cartório', `Enviado ao Cartório em ${dt}`);
   logAudit('Enviado ao Cartório', `NF ${n.nf} — ${n.cliente} — Data: ${fmtDate(dt)}`);
-  saveDB(); filterVencidos(); alert('✅ Atualizado para "Enviado p/ Cartório"');
+  saveDB(); _reRenderCurrentReceivables(); alert('✅ Atualizado para "Enviado p/ Cartório"');
 }
 
 function flagJuridico(id) {
@@ -3799,7 +3984,7 @@ function flagJuridico(id) {
   n.dataJuridico = dt;
   addHist(n, 'Jurídico', `Enviado ao Jurídico em ${dt}`);
   logAudit('Enviado ao Jurídico', `NF ${n.nf} — ${n.cliente} — Data: ${fmtDate(dt)}`);
-  saveDB(); filterVencidos(); alert('✅ Atualizado para "Jurídico"');
+  saveDB(); _reRenderCurrentReceivables(); alert('✅ Atualizado para "Jurídico"');
 }
 
 function setBase(id, status) {
@@ -3810,7 +3995,7 @@ function setBase(id, status) {
   if (status === 'pago' && !n.dataPagamento) n.dataPagamento = today();
   addHist(n, lbl, `Status alterado manualmente para ${lbl}`);
   logAudit('Status: '+lbl, `NF ${n.nf} — ${n.cliente} — R$ ${fmtBR(n.valor)}`);
-  saveDB(); if(currentPage==='vencidos') filterVencidos(); else renderDashboard();
+  saveDB(); _reRenderCurrentReceivables();
 }
 
 function clearAguardar(id) {
@@ -3818,7 +4003,7 @@ function clearAguardar(id) {
   n.baseStatus = null;
   addHist(n, 'Retomado', 'Aguardar removido. Verifique encaminhamento ao Cartório.');
   logAudit('Retomado (Aguardar)', `NF ${n.nf} — ${n.cliente}`);
-  saveDB(); filterVencidos();
+  saveDB(); _reRenderCurrentReceivables();
   alert('✅ Nota retomada. Se aplicável, envie ao Cartório.');
 }
 
@@ -6251,7 +6436,7 @@ async function salvarPerfisAcesso() {
 }
 
 function salvarPermissoes() {
-  const features = ['vencidos','crm','vendedores','clientes','importar','parametros','templates','configuracoes','gerarRelatorio','exportarPlanilha','enviarEmail','enviarWhatsapp'];
+  const features = ['contasReceber','vencidos','crm','vendedores','clientes','importar','parametros','templates','configuracoes','gerarRelatorio','exportarPlanilha','enviarEmail','enviarWhatsapp'];
   const lerPerfil = (perfil) => {
     const obj = {};
     features.forEach(f => {
