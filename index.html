@@ -6157,6 +6157,7 @@ function renderParametros(){
         const cor = perfil === 'gestor' ? '#0284c7' : '#64748b';
         const perms = DB.config.permissoes?.[perfil] || PERM_DEFAULTS[perfil];
         const pageFeats = [
+          { key:'contasReceber', label:'Contas a Receber' },
           { key:'vencidos',      label:'Recebimentos Vencidos' },
           { key:'crm',           label:'CRM – Tratativas' },
           { key:'vendedores',    label:'Cadastro de Vendedores' },
