@@ -2520,7 +2520,7 @@ function filterVencidos() {
     const ultimaTrat = temCrm ? crmNota[crmNota.length-1].tratativa.substring(0,80) : '';
     const tooltipCrm = temCrm ? `${crmNota.length} tratativa(s). Última: ${ultimaTrat}${ultimaTrat.length===80?'…':''}` : 'Nenhuma tratativa ainda';
     return `<tr id="row-${n.id}">
-      <td style="text-align:center;width:36px"><input type="checkbox" class="v-chk" data-id="${n.id}" onchange="atualizarBarraBulk()" style="width:15px;height:15px;cursor:pointer"></td>
+      <td style="text-align:center;width:36px">${canModify('vencidos')?`<input type="checkbox" class="v-chk" data-id="${n.id}" onchange="atualizarBarraBulk()" style="width:15px;height:15px;cursor:pointer">`:'—'}</td>
       <td><b>${n.nf||'—'}</b></td>
       <td>${n.cliente||'—'}</td>
       <td>${fmtDate(n.vencimento)}</td>
@@ -2542,20 +2542,24 @@ function filterVencidos() {
       </td>
       <td title="${tooltipCrm}" style="min-width:220px;white-space:normal">
         <div style="display:flex;flex-direction:column;gap:4px">
-          <input type="text" value="" placeholder="${temCrm?'+ Nova tratativa...':'Observação...'}" onblur="salvarObs('${n.id}',this.value)" onkeydown="if(event.key==='Enter'){salvarObs('${n.id}',this.value);this.value='';event.preventDefault();}" style="width:100%;border:1px solid var(--border);border-radius:5px;padding:4px 8px;font-size:12px;color:var(--text);background:${temCrm?'#fefce8':'#fff'}">
-          <select onchange="salvarTrativaCom('${n.id}',this.value)" style="border:1px solid var(--border);border-radius:5px;padding:3px 6px;font-size:11px;color:var(--text);background:#fff;cursor:pointer" title="Em tratativa com">
-            <option value="" ${!n.emTrativaCom?'selected':''}>Em tratativa com…</option>
-            ${TRATATIVAS_AREAS.map(a=>`<option value="${a.key}" ${n.emTrativaCom===a.key?'selected':''}>${a.icon} ${a.key}</option>`).join('')}
-          </select>
+          ${canModify('vencidos')
+            ? `<input type="text" value="" placeholder="${temCrm?'+ Nova tratativa...':'Observação...'}" onblur="salvarObs('${n.id}',this.value)" onkeydown="if(event.key==='Enter'){salvarObs('${n.id}',this.value);this.value='';event.preventDefault();}" style="width:100%;border:1px solid var(--border);border-radius:5px;padding:4px 8px;font-size:12px;color:var(--text);background:${temCrm?'#fefce8':'#fff'}">`
+            : `<span style="font-size:12px;color:var(--text-muted)">${temCrm?`💬 ${crmNota.length} tratativa(s)`:'-'}</span>`}
+          ${canModify('vencidos')
+            ? `<select onchange="salvarTrativaCom('${n.id}',this.value)" style="border:1px solid var(--border);border-radius:5px;padding:3px 6px;font-size:11px;color:var(--text);background:#fff;cursor:pointer" title="Em tratativa com">
+                <option value="" ${!n.emTrativaCom?'selected':''}>Em tratativa com…</option>
+                ${TRATATIVAS_AREAS.map(a=>`<option value="${a.key}" ${n.emTrativaCom===a.key?'selected':''}>${a.icon} ${a.key}</option>`).join('')}
+              </select>`
+            : (n.emTrativaCom ? `<span style="font-size:11px;color:var(--text-muted)">${n.emTrativaCom}</span>` : '')}
         </div>
       </td>
-      <td><div class="gap-8">${buildActionBtns(n,s)}<button class="btn btn-ghost btn-xs" title="Anexos (${(n.anexos||[]).length})" onclick="openAnexosModal('nota','${n.id}')">📎${(n.anexos||[]).length>0?`<span style="background:#3b82f6;color:#fff;font-size:10px;font-weight:700;padding:1px 4px;border-radius:10px;margin-left:2px">${(n.anexos||[]).length}</span>`:''}</button><button class="btn btn-ghost btn-xs" title="Ver detalhes" onclick="openNotaModal('${n.id}')">📋</button><button class="btn btn-ghost btn-xs" title="Editar lançamento" onclick="openNotaForm('${n.id}')">✏️</button><button class="btn btn-ghost btn-xs" title="Excluir lançamento" onclick="excluirNota('${n.id}')" style="color:var(--danger)">🗑️</button></div></td>
+      <td><div class="gap-8">${buildActionBtns(n,s)}<button class="btn btn-ghost btn-xs" title="Anexos (${(n.anexos||[]).length})" onclick="openAnexosModal('nota','${n.id}')">📎${(n.anexos||[]).length>0?`<span style="background:#3b82f6;color:#fff;font-size:10px;font-weight:700;padding:1px 4px;border-radius:10px;margin-left:2px">${(n.anexos||[]).length}</span>`:''}</button><button class="btn btn-ghost btn-xs" title="Ver detalhes" onclick="openNotaModal('${n.id}')">📋</button>${canModify('vencidos')?`<button class="btn btn-ghost btn-xs" title="Editar lançamento" onclick="openNotaForm('${n.id}')">✏️</button><button class="btn btn-ghost btn-xs" title="Excluir lançamento" onclick="excluirNota('${n.id}')" style="color:var(--danger)">🗑️</button>`:''}</div></td>
     </tr>`;
   }).join('');
 
   document.getElementById('vencidos-tbl').innerHTML = `
     <table><thead><tr>
-      <th style="text-align:center;width:36px"><input type="checkbox" id="v-chk-all" onchange="selecionarTodos(this.checked)" style="width:15px;height:15px;cursor:pointer" title="Selecionar todos"></th>
+      <th style="text-align:center;width:36px">${canModify('vencidos')?`<input type="checkbox" id="v-chk-all" onchange="selecionarTodos(this.checked)" style="width:15px;height:15px;cursor:pointer" title="Selecionar todos">`:''}</th>
       ${(()=>{
         const cols=[{c:'nf',l:'NF'},{c:'cliente',l:'Cliente'},{c:'vencimento',l:'Vencimento'},{c:'atraso',l:'Atraso',r:true}];
         return cols.map(({c,l,r})=>{
@@ -2686,6 +2690,7 @@ function excluirSelecionados() {
 }
 
 function buildActionBtns(n, s) {
+  if (!canModify('vencidos')) return '';
   const id = n.id, r = [];
   if (false) { // E-mail e WhatsApp por nota removidos — envio em massa pelo Dashboard
   }
