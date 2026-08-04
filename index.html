@@ -706,6 +706,11 @@ const PERM_DEFAULTS = {
 function getPerm(feature) {
   if (isAdmin()) return 'modificar';
   if (!_currentUser) return 'ocultar';
+  // Permissão individual do usuário tem prioridade sobre o perfil
+  const email = (_currentUser.email||'').toLowerCase().trim();
+  const permUsuario = DB.config.permissoesUsuario?.[email];
+  if (permUsuario && permUsuario[feature] !== undefined) return permUsuario[feature];
+  // Fallback: permissão do perfil
   const perfil = _currentUser.role === 'gestor' ? 'gestor' : 'consulta';
   const perms = DB.config.permissoes?.[perfil] || PERM_DEFAULTS[perfil];
   return perms[feature] || 'ocultar';
@@ -6237,6 +6242,8 @@ function renderParametros(){
       </div>
     </div>
 
+    ${renderPermissoesUsuarioCard()}
+
     <div class="card" style="margin-top:24px">
       <div class="card-title">📋 Histórico de Modificações</div>
       <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px">Registro de todas as ações realizadas no sistema, com login, horário e descrição. Filtros por data e usuário.</p>
@@ -6435,6 +6442,172 @@ async function salvarPerfisAcesso() {
   }
   renderParametros();
 }
+
+// ── Permissões por Usuário ────────────────────────────────────────────────────
+let _permUsuarioSelecionado = '';
+
+function renderPermissoesUsuarioCard() {
+  // Montar lista de todos os usuários registrados (exceto admins)
+  const gestores  = (DB.config.usuariosGestor  || []).filter(Boolean);
+  const consultas = (DB.config.usuariosConsulta || []).filter(Boolean);
+  const todosUsers = [
+    ...gestores.map(e=>({ email: e, perfil: 'gestor',   label: '👔 Gestor'   })),
+    ...consultas.map(e=>({ email: e, perfil: 'consulta', label: '👁️ Consulta' })),
+  ];
+
+  if (!todosUsers.length) return `
+    <div class="card" style="margin-top:24px">
+      <div class="card-title">👤 Permissões por Usuário</div>
+      <p style="font-size:13px;color:var(--text-muted)">Nenhum usuário cadastrado ainda. Adicione logins na seção <b>Perfis de Acesso</b> acima.</p>
+    </div>`;
+
+  const sel = _permUsuarioSelecionado || todosUsers[0].email;
+  const userObj = todosUsers.find(u => u.email === sel) || todosUsers[0];
+  const perfil  = userObj.perfil;
+  const permPerfil = DB.config.permissoes?.[perfil] || PERM_DEFAULTS[perfil];
+  const permUser   = DB.config.permissoesUsuario?.[sel.toLowerCase().trim()] || {};
+  const temOverride = Object.keys(permUser).length > 0;
+
+  const pageFeats = [
+    { key:'contasReceber', label:'Contas a Receber' },
+    { key:'vencidos',      label:'Recebimentos Vencidos' },
+    { key:'crm',           label:'CRM – Tratativas' },
+    { key:'vendedores',    label:'Cadastro de Vendedores' },
+    { key:'clientes',      label:'Cadastro de Clientes' },
+    { key:'importar',      label:'Importar Planilha' },
+    { key:'parametros',    label:'Parâmetros' },
+    { key:'templates',     label:'Templates de Mensagem' },
+    { key:'configuracoes', label:'Configurações' },
+  ];
+  const actionFeats = [
+    { key:'gerarRelatorio',   label:'Gerar Relatório' },
+    { key:'exportarPlanilha', label:'Exportar Planilha' },
+    { key:'enviarEmail',      label:'Enviar Relatório E-mail' },
+    { key:'enviarWhatsapp',   label:'Enviar Relatório WhatsApp' },
+  ];
+
+  // Para cada feature: valor efetivo = override individual ou padrão do perfil
+  function valEfetivo(key) {
+    return permUser[key] !== undefined ? permUser[key] : (permPerfil[key] || 'ocultar');
+  }
+
+  return `
+  <div class="card" style="margin-top:24px" id="card-perm-usuario">
+    <div class="card-title">👤 Permissões por Usuário</div>
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px">
+      Configure permissões individuais que <b>substituem</b> as do perfil para um usuário específico.
+      Deixe sem override para usar as permissões padrão do perfil.
+    </p>
+
+    <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin-bottom:20px">
+      <div>
+        <label style="font-size:11px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Usuário</label>
+        <select id="perm-user-sel" onchange="_permUsuarioSelecionado=this.value;document.getElementById('card-perm-usuario').outerHTML=renderPermissoesUsuarioCard()" style="border:1px solid var(--border);border-radius:6px;padding:7px 12px;font-size:13px;min-width:240px">
+          ${todosUsers.map(u=>`<option value="${u.email}" ${u.email===sel?'selected':''}>${u.label} — ${u.email}</option>`).join('')}
+        </select>
+      </div>
+      ${temOverride ? `<span style="font-size:12px;background:#fef9c3;color:#854d0e;border:1px solid #fde68a;border-radius:6px;padding:5px 10px;font-weight:600">⚡ Tem override individual</span>` : `<span style="font-size:12px;color:var(--text-muted)">Usando padrão do perfil (${perfil})</span>`}
+    </div>
+
+    <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">📄 Páginas e Módulos</div>
+    <div style="overflow-x:auto;margin-bottom:16px">
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead>
+          <tr style="background:#f8fafc">
+            <th style="text-align:left;padding:8px 12px;border-bottom:2px solid var(--border);color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px;font-weight:600;width:44%">Funcionalidade</th>
+            <th style="text-align:center;padding:8px 12px;border-bottom:2px solid var(--border);color:#16a34a;font-size:11px;text-transform:uppercase;letter-spacing:.4px;font-weight:600">Modificar</th>
+            <th style="text-align:center;padding:8px 12px;border-bottom:2px solid var(--border);color:#0284c7;font-size:11px;text-transform:uppercase;letter-spacing:.4px;font-weight:600">Consultar</th>
+            <th style="text-align:center;padding:8px 12px;border-bottom:2px solid var(--border);color:#dc2626;font-size:11px;text-transform:uppercase;letter-spacing:.4px;font-weight:600">Ocultar</th>
+            <th style="text-align:center;padding:8px 12px;border-bottom:2px solid var(--border);color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px;font-weight:600">Padrão perfil</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${pageFeats.map((f,i) => {
+            const v = valEfetivo(f.key);
+            const pd = permPerfil[f.key] || 'ocultar';
+            const isOverride = permUser[f.key] !== undefined;
+            return `<tr style="background:${i%2===0?'#fff':'#f8fafc'}${isOverride?';outline:2px solid #fde68a;outline-offset:-1px':''}">
+              <td style="padding:9px 12px;border-bottom:1px solid var(--border);font-weight:500;color:var(--text)">${f.label}${isOverride?' <span style="font-size:10px;background:#fef9c3;color:#854d0e;border-radius:4px;padding:1px 5px">override</span>':''}</td>
+              <td style="padding:9px 12px;border-bottom:1px solid var(--border);text-align:center"><input type="radio" name="pu-${f.key}" value="modificar" ${v==='modificar'?'checked':''} style="accent-color:#16a34a;width:16px;height:16px;cursor:pointer"></td>
+              <td style="padding:9px 12px;border-bottom:1px solid var(--border);text-align:center"><input type="radio" name="pu-${f.key}" value="consultar" ${v==='consultar'?'checked':''} style="accent-color:#0284c7;width:16px;height:16px;cursor:pointer"></td>
+              <td style="padding:9px 12px;border-bottom:1px solid var(--border);text-align:center"><input type="radio" name="pu-${f.key}" value="ocultar" ${v==='ocultar'?'checked':''} style="accent-color:#dc2626;width:16px;height:16px;cursor:pointer"></td>
+              <td style="padding:9px 12px;border-bottom:1px solid var(--border);text-align:center;font-size:11px;color:var(--text-muted)">${pd}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+
+    <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">⚡ Ações</div>
+    <div style="overflow-x:auto;margin-bottom:20px">
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead>
+          <tr style="background:#f8fafc">
+            <th style="text-align:left;padding:8px 12px;border-bottom:2px solid var(--border);color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px;font-weight:600;width:44%">Ação</th>
+            <th style="text-align:center;padding:8px 12px;border-bottom:2px solid var(--border);color:#16a34a;font-size:11px;text-transform:uppercase;letter-spacing:.4px;font-weight:600">Permitir</th>
+            <th style="text-align:center;padding:8px 12px;border-bottom:2px solid var(--border);color:#dc2626;font-size:11px;text-transform:uppercase;letter-spacing:.4px;font-weight:600">Ocultar</th>
+            <th style="text-align:center;padding:8px 12px;border-bottom:2px solid var(--border);color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px;font-weight:600">Padrão perfil</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${actionFeats.map((f,i) => {
+            const v = valEfetivo(f.key);
+            const pd = permPerfil[f.key] || 'ocultar';
+            const isPermitido = v !== 'ocultar';
+            const isOverride = permUser[f.key] !== undefined;
+            return `<tr style="background:${i%2===0?'#fff':'#f8fafc'}${isOverride?';outline:2px solid #fde68a;outline-offset:-1px':''}">
+              <td style="padding:9px 12px;border-bottom:1px solid var(--border);font-weight:500;color:var(--text)">${f.label}${isOverride?' <span style="font-size:10px;background:#fef9c3;color:#854d0e;border-radius:4px;padding:1px 5px">override</span>':''}</td>
+              <td style="padding:9px 12px;border-bottom:1px solid var(--border);text-align:center"><input type="radio" name="pu-${f.key}" value="modificar" ${isPermitido?'checked':''} style="accent-color:#16a34a;width:16px;height:16px;cursor:pointer"></td>
+              <td style="padding:9px 12px;border-bottom:1px solid var(--border);text-align:center"><input type="radio" name="pu-${f.key}" value="ocultar" ${!isPermitido?'checked':''} style="accent-color:#dc2626;width:16px;height:16px;cursor:pointer"></td>
+              <td style="padding:9px 12px;border-bottom:1px solid var(--border);text-align:center;font-size:11px;color:var(--text-muted)">${pd==='ocultar'?'Ocultar':'Permitir'}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:12px">
+      <button class="btn btn-primary" onclick="salvarPermissoesUsuario()">💾 Salvar Permissões do Usuário</button>
+      ${temOverride ? `<button class="btn btn-ghost" onclick="resetarPermUsuario()" style="color:#dc2626;border-color:#fca5a5">↩ Resetar para padrão do perfil</button>` : ''}
+      <span id="perm-user-status" style="font-size:12px;color:var(--text-muted)"></span>
+    </div>
+  </div>`;
+}
+
+function salvarPermissoesUsuario() {
+  const sel = document.getElementById('perm-user-sel');
+  const email = (sel?.value || _permUsuarioSelecionado || '').toLowerCase().trim();
+  if (!email) return alert('Selecione um usuário.');
+  const features = ['contasReceber','vencidos','crm','vendedores','clientes','importar','parametros','templates','configuracoes','gerarRelatorio','exportarPlanilha','enviarEmail','enviarWhatsapp'];
+  const perm = {};
+  features.forEach(f => {
+    const r = document.querySelector(`input[name="pu-${f}"]:checked`);
+    if (r) perm[f] = r.value;
+  });
+  if (!DB.config.permissoesUsuario) DB.config.permissoesUsuario = {};
+  DB.config.permissoesUsuario[email] = perm;
+  saveDB();
+  logAudit('Permissões por Usuário', `Override salvo para ${email}`);
+  const st = document.getElementById('perm-user-status');
+  if (st) { st.textContent = '✅ Salvo com sucesso!'; setTimeout(()=>{ st.textContent=''; },3000); }
+  // Re-render o card para atualizar badges de override
+  const card = document.getElementById('card-perm-usuario');
+  if (card) card.outerHTML = renderPermissoesUsuarioCard();
+}
+
+function resetarPermUsuario() {
+  const sel = document.getElementById('perm-user-sel');
+  const email = (sel?.value || _permUsuarioSelecionado || '').toLowerCase().trim();
+  if (!email) return;
+  if (!confirm(`Remover todas as permissões individuais de ${email}?\n\nEle passará a usar as permissões padrão do perfil.`)) return;
+  if (DB.config.permissoesUsuario) delete DB.config.permissoesUsuario[email];
+  saveDB();
+  logAudit('Permissões por Usuário', `Override removido para ${email}`);
+  const card = document.getElementById('card-perm-usuario');
+  if (card) card.outerHTML = renderPermissoesUsuarioCard();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 function salvarPermissoes() {
   const features = ['contasReceber','vencidos','crm','vendedores','clientes','importar','parametros','templates','configuracoes','gerarRelatorio','exportarPlanilha','enviarEmail','enviarWhatsapp'];
