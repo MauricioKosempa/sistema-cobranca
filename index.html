@@ -1762,7 +1762,7 @@ function renderDashboard() {
   const cliMap = {};
   notas.forEach(n => {
     const s = calcStatus(n);
-    if(['pago','perdido','a_vencer'].includes(s)) return;
+    if(['pago','perdido','a_vencer','reprogramado'].includes(s)) return;
     const d = diasAtraso(n.vencimento);
     if(d <= 0) return;
     const k = n.cliente || 'Sem Cliente';
@@ -1782,7 +1782,8 @@ function renderDashboard() {
   });
   const ranking = Object.values(vendMap).map(v => {
     const vencido = v.notas.reduce((s,n)=>{
-      if(['pago','perdido'].includes(calcStatus(n))) return s;
+      const st = calcStatus(n);
+      if(['pago','perdido','a_vencer','reprogramado'].includes(st)) return s;
       return diasAtraso(n.vencimento)>0 ? s+Number(n.valor||0) : s;
     },0);
     return {...v, vencido};
