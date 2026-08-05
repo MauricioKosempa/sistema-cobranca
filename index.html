@@ -5423,10 +5423,17 @@ function analisarImport(){
     html+=`<div class="alert alert-success">✅ Nenhum conflito encontrado. ${parsed.length} registros prontos para importar.</div>`;
   }
 
+  const adminForcarBtn = isAdmin() && temPendencia && !(temStatusInv||temEmpresaInv||temTratativaInv)
+    ? `<button class="btn btn-sm" style="background:#7c3aed;color:#fff;border:none;margin-left:12px"
+        onclick="if(confirm('⚠️ Importar sem vincular todos os vendedores?\\n\\nOs títulos sem vendedor ficarão com o campo em branco.'))execImportFinal()"
+        title="Somente Administradores — importa mesmo com vínculos de vendedor pendentes">🔓 Admin: Importar sem vendedor</button>`
+    : '';
+
   html+=`<div class="form-actions" id="btns-import">
     ${(temStatusInv||temEmpresaInv||temTratativaInv) ? '<span style="font-size:13px;color:#c2410c;font-weight:600">⚠️ Corrija os campos inválidos antes de importar.</span>' :
-      temPendencia ? '<span class="text-muted" style="font-size:13px">⚠️ Confirme os vínculos de vendedor antes de importar.</span>' :
-      `<button class="btn btn-primary" onclick="execImportFinal()">📥 Importar ${parsed.length} Registros</button>`}
+      temPendencia
+        ? `<span class="text-muted" style="font-size:13px">⚠️ Confirme os vínculos de vendedor antes de importar.</span>${adminForcarBtn}`
+        : `<button class="btn btn-primary" onclick="execImportFinal()">📥 Importar ${parsed.length} Registros</button>`}
     <button class="btn btn-ghost" onclick="renderImportar()">Cancelar</button>
   </div>`;
 
