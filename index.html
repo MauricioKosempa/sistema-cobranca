@@ -4768,6 +4768,53 @@ function openCliForm(id){
         '</select>'+
         '<button class="btn btn-primary btn-sm" onclick="vincularOrfao(\''+id+'\')">🔗 Vincular</button>'+
         '</div></div>';
+    })()}
+    ${(()=>{
+      const notasCli=(DB.notas||[]).filter(n=>n.cliente===c.nome);
+      if(!notasCli.length) return '';
+      // Monta mapa notaId → nomeAntigo a partir do histórico de mesclagens
+      const mergesDoCliente=(DB.mergeHistory||[]).filter(m=>m.clientePrincipalNome===c.nome);
+      const mergeMap={};
+      mergesDoCliente.forEach(m=>{
+        const nomeOld=m.clienteRemovido?.nome||'?';
+        (m.notasTransferidas||[]).forEach(nt=>{mergeMap[nt.id]=nomeOld;});
+      });
+      // Agrupa: notas originais do cliente vs notas absorvidas por mesclagem
+      const notasOriginais=notasCli.filter(n=>!mergeMap[n.id]);
+      const totalOriginal=notasOriginais.reduce((s,n)=>s+Number(n.valor||0),0);
+      const totalGeral=notasCli.reduce((s,n)=>s+Number(n.valor||0),0);
+      // Agrupa absorvidas por nome de origem
+      const porOrigem={};
+      notasCli.filter(n=>mergeMap[n.id]).forEach(n=>{
+        const orig=mergeMap[n.id];
+        if(!porOrigem[orig]) porOrigem[orig]=[];
+        porOrigem[orig].push(n);
+      });
+      const buildChips=notas=>notas.map(n=>'<span style="display:inline-block;background:#f1f5f9;border:1px solid var(--border);border-radius:6px;padding:2px 8px;font-size:12px;font-weight:600;color:var(--text)">'+fmt(n.valor)+'</span>').join(' ');
+      let html='<hr style="margin:16px 0;border:none;border-top:1px solid var(--border)">'+
+        '<div style="background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:14px 16px">'+
+        '<div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:10px">💰 PARCELAS VINCULADAS ('+notasCli.length+')</div>';
+      if(notasOriginais.length){
+        html+='<div style="margin-bottom:8px">'+
+          (Object.keys(porOrigem).length?'<div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:4px">Cadastro atual</div>':'')+
+          buildChips(notasOriginais)+
+          '<span style="font-size:11px;color:var(--text-muted);margin-left:8px">= '+fmt(totalOriginal)+'</span>'+
+          '</div>';
+      }
+      Object.keys(porOrigem).forEach(orig=>{
+        const ns=porOrigem[orig];
+        const tot=ns.reduce((s,n)=>s+Number(n.valor||0),0);
+        html+='<div style="margin-bottom:8px;padding:8px 10px;background:#fffbeb;border:1px solid #fde68a;border-radius:6px">'+
+          '<div style="font-size:11px;font-weight:700;color:#92400e;margin-bottom:6px">🔀 Absorvido de: '+orig+'</div>'+
+          buildChips(ns)+
+          '<span style="font-size:11px;color:#92400e;margin-left:8px">= '+fmt(tot)+'</span>'+
+          '</div>';
+      });
+      if(Object.keys(porOrigem).length){
+        html+='<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:12px;font-weight:700;color:#15803d">Total geral: '+fmt(totalGeral)+'</div>';
+      }
+      html+='</div>';
+      return html;
     })()}` : ''}`);
 }
 function editCliente(id){openCliForm(id);}
