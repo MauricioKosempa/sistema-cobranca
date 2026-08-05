@@ -4320,7 +4320,7 @@ function renderClientes() {
     const whatsCol = todosWhats.length === 0 ? '—' : todosWhats[0] + (todosWhats.length > 1 ? ` <span style="background:#16a34a;color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:10px;margin-left:4px" title="${todosWhats.join('\n')}">+${todosWhats.length-1}</span>` : '');
     return `<tr>
     <td><b>${c.nome}</b></td><td>${c.doc||'—'}</td><td>${emailCol}</td><td>${whatsCol}</td>
-    <td>${c.vend1||'—'}</td>
+    <td>${c.empresa||'—'}</td><td>${c.vend1||'—'}</td>
     <td><span class="chip" style="background:${c.situacao==='Inativo'?'#f1f5f9':'#dcfce7'};color:${c.situacao==='Inativo'?'#475569':'#15803d'}">${c.situacao||'Ativo'}</span></td>
     <td class="gap-8">
       <button class="btn btn-ghost btn-xs" title="Anexos (${(c.anexos||[]).length})" onclick="openAnexosModal('cliente','${c.id}')">📎${(c.anexos||[]).length>0?` <span style="background:#3b82f6;color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:10px">${(c.anexos||[]).length}</span>`:''}</button>
@@ -4339,8 +4339,8 @@ function renderClientes() {
         </div>
       </div>
       <div class="tbl-wrap"><table>
-        <thead><tr><th>Nome</th><th>CPF/CNPJ</th><th>E-mail</th><th>WhatsApp</th><th>Vendedores</th><th>Situação</th><th>Ações</th></tr></thead>
-        <tbody>${rows||'<tr><td colspan="7" class="text-center text-muted" style="padding:20px">Nenhum cliente cadastrado</td></tr>'}</tbody>
+        <thead><tr><th>Nome</th><th>CPF/CNPJ</th><th>E-mail</th><th>WhatsApp</th><th>Empresa</th><th>Vendedor</th><th>Situação</th><th>Ações</th></tr></thead>
+        <tbody>${rows||'<tr><td colspan="8" class="text-center text-muted" style="padding:20px">Nenhum cliente cadastrado</td></tr>'}</tbody>
       </table></div>
     </div>`;
 }
@@ -4359,6 +4359,16 @@ function openCliForm(id){
     <div class="form-grid">
       <div class="form-group" style="grid-column:1/-1"><label>Nome / Razão Social *</label><input id="cf-nome" value="${c?.nome||''}"></div>
       <div class="form-group"><label>CPF / CNPJ</label><input id="cf-doc" value="${c?.doc||''}"></div>
+      <div class="form-group">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <label style="margin:0">🏢 Empresa</label>
+          ${id?`<span style="font-size:11px;color:var(--text-muted)">Atualiza todos os lançamentos ao salvar</span>`:''}
+        </div>
+        <select id="cf-empresa" style="width:100%">
+          <option value="">— Nenhuma —</option>
+          ${(DB.empresas||[]).map(e=>`<option value="${e}" ${(c?.empresa||'')=== e?'selected':''}>${e}</option>`).join('')}
+        </select>
+      </div>
       <div class="form-group" style="grid-column:1/-1">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
           <label style="margin:0">E-mails de Cobrança</label>
@@ -4462,11 +4472,12 @@ function saveCli(id){
   const whatsInputs=[...document.querySelectorAll('.cf-whats-row-input')].map(i=>i.value.trim()).filter(Boolean);
   const whats=whatsInputs[0]||'';
   const whatsAdicionais=whatsInputs.slice(1);
-  const d={nome,doc:document.getElementById('cf-doc').value.trim(),email,emailsAdicionais,emailJur:document.getElementById('cf-ejur').value.trim(),whats,whatsAdicionais,vend1:document.getElementById('cf-v1').value,situacao:document.getElementById('cf-sit').value,obs:document.getElementById('cf-obs').value.trim()};
+  const d={nome,doc:document.getElementById('cf-doc').value.trim(),email,emailsAdicionais,emailJur:document.getElementById('cf-ejur').value.trim(),whats,whatsAdicionais,vend1:document.getElementById('cf-v1').value,empresa:document.getElementById('cf-empresa')?.value||'',situacao:document.getElementById('cf-sit').value,obs:document.getElementById('cf-obs').value.trim()};
   // Captura dados antigos antes de sobrescrever (para sync de lançamentos)
   const oldCli = id ? DB.clientes.find(x=>x.id===id) : null;
   const oldNome = oldCli?.nome||'';
   const oldVend = oldCli?.vend1||'';
+  const oldEmp  = oldCli?.empresa||'';
   if(id){Object.assign(DB.clientes.find(x=>x.id===id),d);}else{DB.clientes.push({id:uid(),...d});}
   if(id && oldNome){
     // Sincroniza nome em lançamentos e CRM se o nome foi alterado
@@ -4476,15 +4487,25 @@ function saveCli(id){
       (DB.crm||[]).forEach(c=>{ if(c.cliente===oldNome) c.cliente=nome; });
       if(qtd>0) console.info(`[saveCli] Nome atualizado em ${qtd} lançamento(s): "${oldNome}" → "${nome}"`);
     }
-    // Sincroniza vendedor em TODOS os lançamentos do cliente (sempre, não só quando muda)
+    // Sincroniza vendedor em TODOS os lançamentos do cliente (Contas a Receber e Vencidos)
     if(d.vend1){
       let qtdV=0;
       (DB.notas||[]).forEach(n=>{ if(n.cliente===nome){ n.vendedor=d.vend1; qtdV++; } });
       if(qtdV>0) console.info(`[saveCli] Vendedor "${d.vend1}" aplicado em ${qtdV} lançamento(s) de "${nome}"`);
     }
+    // Sincroniza empresa em TODOS os lançamentos do cliente (Contas a Receber e Vencidos)
+    if(d.empresa !== undefined){
+      let qtdE=0;
+      (DB.notas||[]).forEach(n=>{ if(n.cliente===nome){ n.empresa=d.empresa; qtdE++; } });
+      if(qtdE>0 && d.empresa!==oldEmp) console.info(`[saveCli] Empresa "${d.empresa}" aplicada em ${qtdE} lançamento(s) de "${nome}"`);
+    }
   }
   DB.clientes.sort((a,b)=>(a.nome||'').localeCompare(b.nome||'','pt-BR',{sensitivity:'base'}));
-  logAudit(id ? 'Editar Cliente' : 'Novo Cliente', `${nome} — Vendedor: ${d.vend1||'—'}${oldNome&&oldNome!==nome?' (renomeado de "'+oldNome+'")':''}`);
+  const mudancas=[];
+  if(oldNome&&oldNome!==nome) mudancas.push(`renomeado de "${oldNome}"`);
+  if(id&&oldVend!==d.vend1) mudancas.push(`vendedor: ${oldVend||'—'} → ${d.vend1||'—'}`);
+  if(id&&oldEmp!==d.empresa) mudancas.push(`empresa: ${oldEmp||'—'} → ${d.empresa||'—'}`);
+  logAudit(id ? 'Editar Cliente' : 'Novo Cliente', `${nome} — Vendedor: ${d.vend1||'—'} — Empresa: ${d.empresa||'—'}${mudancas.length?' ('+mudancas.join(', ')+')':''}`);
   saveDB();closeModal();renderClientes();
 }
 function delCliente(id){
@@ -4492,7 +4513,7 @@ function delCliente(id){
   if(!c)return;
   const temNotas=DB.notas.some(n=>n.cliente===c.nome);
   if(temNotas){
-    alert(`⚠️ O cliente "${c.nome}" possui lançamento(s) em Recebimentos Vencidos e não pode ser excluído.\n\nExclua os lançamentos vinculados antes de remover o cadastro.`);
+    alert(`⚠️ O cliente "${c.nome}" possui lançamento(s) vinculados (Contas a Receber / Recebimentos Vencidos) e não pode ser excluído.\n\nExclua os lançamentos vinculados antes de remover o cadastro.`);
     return;
   }
   if(!confirm(`Excluir o cliente "${c.nome}"?`))return;
@@ -4986,49 +5007,13 @@ function analisarImport(){
   const dupsPago=todasDups.filter(r=>{ const ex=DB.notas.find(n=>n.nf===r.nf&&n.cliente===r.cliente); return ex&&ex.baseStatus==='pago'; });
   const dups=todasDups.filter(r=>{ const ex=DB.notas.find(n=>n.nf===r.nf&&n.cliente===r.cliente); return !(ex&&ex.baseStatus==='pago'); });
 
-  // ---- Validação de Status ----
-  const STATUS_IMPORT_VALIDOS = {
-    '': null, 'automático': null, 'automatico': null,
-    // Auto (não força status)
-    'a vencer': null,
-    '🔄 reprogramado': null, 'reprogramado': null,
-    // Travados — importados explicitamente, respeitados pelo sistema
-    'cobrança simples': 'cobranca_simples', 'cobranca simples': 'cobranca_simples',
-    'cobrança avançada': 'cobranca_avancada', 'cobranca avancada': 'cobranca_avancada',
-    'aguardando cartório': 'aguardando_cartorio', 'aguardando cartorio': 'aguardando_cartorio',
-    // Cartório
-    'enviado p/ cartório': 'cartorio', 'enviado p/ cartorio': 'cartorio',
-    'enviado ao cartório': 'cartorio', 'enviado ao cartorio': 'cartorio',
-    'em cartório': 'cartorio', 'em cartorio': 'cartorio',
-    'cartório': 'cartorio', 'cartorio': 'cartorio',
-    // Protestado
-    'protestado': 'protestado', 'protesto': 'protestado',
-    // Jurídico
-    'jurídico': 'juridico', 'juridico': 'juridico',
-    'juridico rl': 'juridico', 'jurídico rl': 'juridico',
-    'processo judicial': 'processo_judicial',
-    'processo_judicial': 'processo_judicial',
-    // Finais
-    'pago': 'pago', 'liquidado': 'pago', 'quitado': 'pago',
-    'aguardar': 'aguardar', 'pausado': 'aguardar',
-    'perdido': 'perdido', 'incobrável': 'perdido', 'incobrave': 'perdido', 'cancelado': 'perdido',
-  };
+  // Status é sempre automático na importação — não valida coluna status
+  // O sistema calcula automaticamente: a_vencer → Contas a Receber, atrasado → Recebimentos Vencidos
   const statusInvalidos = [];
   const statusSugestoes = [];
-  parsed.forEach((r,idx) => {
-    const sv = (r.statusImport||'').toLowerCase().trim();
-    if (sv && !(sv in STATUS_IMPORT_VALIDOS)) {
-      const match = melhorMatchStatus(sv);
-      if (match) {
-        statusSugestoes.push({ idx, nf:r.nf, cliente:r.cliente, statusOriginal:r.statusImport, sugestao:match.label, score:match.score, confirmado:false });
-      } else {
-        statusInvalidos.push({ idx, nf:r.nf, cliente:r.cliente, statusOriginal:r.statusImport });
-      }
-    }
-  });
   window._statusInvalidos  = statusInvalidos;
   window._statusSugestoes  = statusSugestoes;
-  window._STATUS_IMPORT_VALIDOS = STATUS_IMPORT_VALIDOS;
+  window._STATUS_IMPORT_VALIDOS = {};
 
   // ---- Validação de Empresa ----
   const empresaInvalidas = [];
@@ -5614,36 +5599,11 @@ function execImportFinal(){
   const decisions={};
   dups.forEach(d=>{ decisions[`${d.nf}|${d.cliente}`]=globalDec; });
 
-  // Mapa status importação → campos da nota
-  const STATUS_IMPORT_VALIDOS = window._STATUS_IMPORT_VALIDOS || {};
-  function resolverStatusImport(statusStr) {
-    const key = (statusStr||'').toLowerCase().trim();
-    const mapped = STATUS_IMPORT_VALIDOS[key];
-    // mapped = null (auto) | 'cartorio' | 'protestado' | 'juridico' | 'processo_judicial' | 'pago' | 'aguardar' | 'perdido'
-    //        | 'cobranca_simples' | 'cobranca_avancada' | 'aguardando_cartorio'
-    let baseStatus=null, dataCartorio=null, dataJuridico=null;
-    if (mapped === 'cobranca_simples')    { baseStatus = 'cobranca_simples'; }
-    if (mapped === 'cobranca_avancada')   { baseStatus = 'cobranca_avancada'; }
-    if (mapped === 'aguardando_cartorio') { baseStatus = 'aguardando_cartorio'; }
-    if (mapped === 'cartorio') {
-      dataCartorio = today();
-    }
-    if (mapped === 'protestado') {
-      // Seta dataCartorio no passado para a máquina calcular 'protestado'
-      const dp = Number(DB.config.diasProtestado || 16);
-      const d = new Date(); d.setDate(d.getDate() - (dp + 1));
-      dataCartorio = d.toISOString().slice(0,10);
-    }
-    if (mapped === 'juridico')  { dataJuridico = today(); }
-    if (mapped === 'processo_judicial') { baseStatus = 'processo_judicial'; }
-    if (mapped === 'pago')      { baseStatus   = 'pago'; }
-    if (mapped === 'aguardar')  { baseStatus   = 'aguardar'; }
-    if (mapped === 'perdido')   { baseStatus   = 'perdido'; }
-    return { baseStatus, dataCartorio, dataJuridico };
-  }
+  // Status sempre automático na importação — o sistema calcula pelo vencimento
+  // Notas a vencer → Contas a Receber; atrasadas → Recebimentos Vencidos (calcStatus)
 
   parsed.forEach(r=>{
-    const {nf,cliente,vendedor,vencimento,valor,emissao,empresa,statusImport,emTrativaCom}=r;
+    const {nf,cliente,vendedor,vencimento,valor,emissao,empresa,emTrativaCom}=r;
     if(!cliente&&!nf){skip++;return;}
 
     // Auto-criar cliente se não existir (sem duplicar)
@@ -5656,8 +5616,6 @@ function execImportFinal(){
       DB.vendedores.push({id:uid(),nome:vendedor,situacao:'Ativo'});
     }
 
-    const statusCampos = resolverStatusImport(statusImport);
-
     // Verifica duplicata
     const existIdx=DB.notas.findIndex(n=>n.nf===nf&&n.cliente===cliente);
     if(existIdx>=0){
@@ -5667,7 +5625,8 @@ function execImportFinal(){
         const hist=DB.notas[existIdx].historico||[];
         hist.unshift({data:new Date().toISOString(),tipo:'Substituição',desc:'Nota substituída via reimportação'});
         DB.notas[existIdx]={...DB.notas[existIdx],vencimento,valor:Number(valor)||0,emissao,vendedor,
-          ...statusCampos, emTrativaCom:emTrativaCom||DB.notas[existIdx].emTrativaCom||'', historico:hist};
+          baseStatus:null, dataCartorio:null, dataJuridico:null,
+          emTrativaCom:emTrativaCom||DB.notas[existIdx].emTrativaCom||'', historico:hist};
         sub++;
       } else { skip++; }
       return;
@@ -5678,10 +5637,10 @@ function execImportFinal(){
     DB.notas.push({
       id:nId, nf, cliente, vendedor, empresa:empresa||'', emissao, vencimento,
       valor:Number(valor)||0, batchId,
-      ...statusCampos,
+      baseStatus:null, dataCartorio:null, dataJuridico:null,
       emTrativaCom: emTrativaCom||'Financeiro',
       historico:[{data:new Date().toISOString(),tipo:'Importação',
-        desc:`Importado via planilha: ${window._importFileName||'arquivo'}${statusImport?' | Status: '+statusImport:''}${emTrativaCom?' | Em tratativa: '+emTrativaCom:' | Em tratativa: Financeiro (padrão)'}`}]
+        desc:`Importado via planilha: ${window._importFileName||'arquivo'}${emTrativaCom?' | Em tratativa: '+emTrativaCom:' | Em tratativa: Financeiro (padrão)'}`}]
     });
     imp++;
   });
