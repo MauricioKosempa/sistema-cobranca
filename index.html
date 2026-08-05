@@ -4373,6 +4373,7 @@ function renderClientes() {
     return `<tr style="${rowBg}">
     <td>${nomeBadge}</td><td>${c.doc||'—'}</td><td>${emailCol}</td><td>${whatsCol}</td>
     <td>${c.empresa||'—'}</td><td>${c.vend1||'—'}</td>
+    <td style="white-space:nowrap;color:var(--text-muted);font-size:12px">${c.dataCadastro?fmtDate(c.dataCadastro):'—'}</td>
     <td><span class="chip" style="background:${c.situacao==='Inativo'?'#f1f5f9':'#dcfce7'};color:${c.situacao==='Inativo'?'#475569':'#15803d'}">${c.situacao||'Ativo'}</span></td>
     <td class="gap-8">
       ${dupInfo ? `<button class="btn btn-sm" style="background:#f59e0b;color:#000;font-weight:700;border:none" onclick="editCliente('${c.id}')" title="${dupInfo.motivo}">🔀 Mesclar</button>` : ''}
@@ -4400,8 +4401,8 @@ function renderClientes() {
         </div>
       </div>` : ''}
       <div class="tbl-wrap"><table>
-        <thead><tr><th>Nome</th><th>CPF/CNPJ</th><th>E-mail</th><th>WhatsApp</th><th>Empresa</th><th>Vendedor</th><th>Situação</th><th>Ações</th></tr></thead>
-        <tbody>${rows||'<tr><td colspan="8" class="text-center text-muted" style="padding:20px">Nenhum cliente cadastrado</td></tr>'}</tbody>
+        <thead><tr><th>Nome</th><th>CPF/CNPJ</th><th>E-mail</th><th>WhatsApp</th><th>Empresa</th><th>Vendedor</th><th>Cadastrado em</th><th>Situação</th><th>Ações</th></tr></thead>
+        <tbody>${rows||'<tr><td colspan="9" class="text-center text-muted" style="padding:20px">Nenhum cliente cadastrado</td></tr>'}</tbody>
       </table></div>
     </div>`;
 }
@@ -4420,6 +4421,7 @@ function openCliForm(id){
     <div class="form-grid">
       <div class="form-group" style="grid-column:1/-1"><label>Nome / Razão Social *</label><input id="cf-nome" value="${c?.nome||''}"></div>
       <div class="form-group"><label>CPF / CNPJ</label><input id="cf-doc" value="${c?.doc||''}"></div>
+      ${id && c?.dataCadastro ? `<div class="form-group"><label>📅 Data de Cadastro</label><input value="${fmtDate(c.dataCadastro)}" readonly style="background:#f1f5f9;color:var(--text-muted);cursor:default"></div>` : ''}
       <div class="form-group">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
           <label style="margin:0">🏢 Empresa</label>
@@ -4539,7 +4541,7 @@ function saveCli(id){
   const oldNome = oldCli?.nome||'';
   const oldVend = oldCli?.vend1||'';
   const oldEmp  = oldCli?.empresa||'';
-  if(id){Object.assign(DB.clientes.find(x=>x.id===id),d);}else{DB.clientes.push({id:uid(),...d});}
+  if(id){Object.assign(DB.clientes.find(x=>x.id===id),d);}else{DB.clientes.push({id:uid(),dataCadastro:today(),...d});}
   if(id && oldNome){
     // Sincroniza nome em lançamentos e CRM se o nome foi alterado
     if(oldNome !== nome){
