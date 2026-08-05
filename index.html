@@ -4591,18 +4591,36 @@ function mesclarCliente(idPrincipal){
   const principal=DB.clientes.find(x=>x.id===idPrincipal);
   const duplicado=DB.clientes.find(x=>x.id===idDup);
   if(!principal||!duplicado)return;
-  const qtdNotas=DB.notas.filter(n=>n.cliente===duplicado.nome).length;
-  const qtdCrm=(DB.crm||[]).filter(c=>c.cliente===duplicado.nome).length;
-  if(!confirm(`Mesclar "${duplicado.nome}" em "${principal.nome}"?\n\n• ${qtdNotas} lançamento(s) serão transferidos\n• ${qtdCrm} registro(s) de CRM serão atualizados\n• O cadastro "${duplicado.nome}" será excluído\n\nEsta ação não pode ser desfeita.`))return;
+  const notasDup=DB.notas.filter(n=>n.cliente===duplicado.nome);
+  const crmDup=(DB.crm||[]).filter(c=>c.cliente===duplicado.nome);
+  const qtdNotas=notasDup.length;
+  const qtdCrm=crmDup.length;
+  const totalValor=notasDup.reduce((s,n)=>s+Number(n.valor||0),0);
+  if(!confirm(`Mesclar "${duplicado.nome}" em "${principal.nome}"?\n\n• ${qtdNotas} lançamento(s) — R$ ${fmtBR(totalValor)}\n• ${qtdCrm} registro(s) de CRM serão atualizados\n• O cadastro "${duplicado.nome}" será excluído\n\nEsta ação poderá ser revertida em Parâmetros.`))return;
+
+  // ── Salva snapshot para reversão ──────────────────────────────────────────
+  if(!DB.mergeHistory) DB.mergeHistory=[];
+  DB.mergeHistory.unshift({
+    id: uid(),
+    data: new Date().toISOString(),
+    operador: _currentUser?.name || _currentUser?.email || 'Sistema',
+    clienteRemovido: JSON.parse(JSON.stringify(duplicado)),
+    clientePrincipalNome: principal.nome,
+    notasTransferidas: notasDup.map(n=>({ id:n.id, nomeAntigo:duplicado.nome, vendedorAntigo:n.vendedor })),
+    crmTransferidos: crmDup.map(c=>c.id).filter(Boolean),
+    totalValor
+  });
+  // ─────────────────────────────────────────────────────────────────────────
+
   // Transfere lançamentos: atualiza nome e herda vendedor do principal
   DB.notas.forEach(n=>{if(n.cliente===duplicado.nome){n.cliente=principal.nome;if(principal.vend1)n.vendedor=principal.vend1;}});
   // Transfere histórico CRM
   (DB.crm||[]).forEach(c=>{if(c.cliente===duplicado.nome)c.cliente=principal.nome;});
   // Remove o duplicado
   DB.clientes=DB.clientes.filter(x=>x.id!==idDup);
-  logAudit('Mesclar Clientes', `"${duplicado.nome}" absorvido por "${principal.nome}" — ${qtdNotas} lançamento(s) transferido(s)`);
+  logAudit('Mesclar Clientes', `"${duplicado.nome}" absorvido por "${principal.nome}" — ${qtdNotas} lançamento(s) — R$ ${fmtBR(totalValor)}`);
   saveDB();closeModal();renderClientes();
-  alert(`✅ Mesclagem concluída!\n• ${qtdNotas} lançamento(s) transferido(s) com vendedor "${principal.vend1||'—'}"\n• ${qtdCrm} CRM atualizado(s)\n• "${duplicado.nome}" removido`);
+  alert(`✅ Mesclagem concluída!\n• ${qtdNotas} lançamento(s) — R$ ${fmtBR(totalValor)}\n• ${qtdCrm} CRM atualizado(s)\n• "${duplicado.nome}" removido\n\nPara reverter, acesse Parâmetros → Histórico de Mesclagens.`);
 }
 
 /* ============================================================
@@ -6274,6 +6292,8 @@ function renderParametros(){
 
     ${renderPermissoesUsuarioCard()}
 
+    ${isAdmin() ? renderMergeHistoryCard() : ''}
+
     <div class="card" style="margin-top:24px">
       <div class="card-title">📋 Histórico de Modificações</div>
       <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px">Registro de todas as ações realizadas no sistema, com login, horário e descrição. Filtros por data e usuário.</p>
@@ -6472,6 +6492,117 @@ async function salvarPerfisAcesso() {
   }
   renderParametros();
 }
+
+// ── Histórico de Mesclagens ───────────────────────────────────────────────────
+function renderMergeHistoryCard() {
+  const hist = DB.mergeHistory || [];
+  const total = hist.length;
+  return `
+  <div class="card" style="margin-top:24px" id="card-merge-hist">
+    <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none"
+         onclick="toggleMergeHistory()">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:18px">🔀</span>
+        <div>
+          <div class="card-title" style="margin:0">Histórico de Mesclagens</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:2px">
+            ${total === 0 ? 'Nenhuma mesclagem registrada' : `${total} mesclagem(ns) — clique para expandir`}
+          </div>
+        </div>
+      </div>
+      <span id="merge-hist-chevron" style="font-size:18px;color:var(--text-muted);transition:transform .2s">▶</span>
+    </div>
+
+    <div id="merge-hist-body" style="display:none;margin-top:20px">
+      ${total === 0 ? `<p style="font-size:13px;color:var(--text-muted)">Nenhuma mesclagem registrada ainda.</p>` : `
+      <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px">
+        Somente administradores podem reverter uma mesclagem. A reversão recria o cadastro removido e devolve todos os lançamentos para ele.
+      </p>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead>
+            <tr style="background:#f8fafc">
+              <th style="text-align:left;padding:9px 12px;border-bottom:2px solid var(--border);color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px;font-weight:600">Data</th>
+              <th style="text-align:left;padding:9px 12px;border-bottom:2px solid var(--border);color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px;font-weight:600">Removido</th>
+              <th style="text-align:left;padding:9px 12px;border-bottom:2px solid var(--border);color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px;font-weight:600">Absorvido por</th>
+              <th style="text-align:right;padding:9px 12px;border-bottom:2px solid var(--border);color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px;font-weight:600">Títulos</th>
+              <th style="text-align:right;padding:9px 12px;border-bottom:2px solid var(--border);color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px;font-weight:600">Valor ref.</th>
+              <th style="text-align:left;padding:9px 12px;border-bottom:2px solid var(--border);color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px;font-weight:600">Operador</th>
+              <th style="padding:9px 12px;border-bottom:2px solid var(--border)"></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${hist.map((m,i)=>`
+            <tr style="background:${i%2===0?'#fff':'#f8fafc'}">
+              <td style="padding:9px 12px;border-bottom:1px solid var(--border);white-space:nowrap;color:var(--text-muted);font-size:12px">${new Date(m.data).toLocaleString('pt-BR')}</td>
+              <td style="padding:9px 12px;border-bottom:1px solid var(--border);font-weight:600">${m.clienteRemovido?.nome||'—'}</td>
+              <td style="padding:9px 12px;border-bottom:1px solid var(--border)">${m.clientePrincipalNome||'—'}</td>
+              <td style="padding:9px 12px;border-bottom:1px solid var(--border);text-align:right">${(m.notasTransferidas||[]).length}</td>
+              <td style="padding:9px 12px;border-bottom:1px solid var(--border);text-align:right;font-weight:600;color:#0284c7">${fmt(m.totalValor||0)}</td>
+              <td style="padding:9px 12px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text-muted)">${m.operador||'—'}</td>
+              <td style="padding:9px 12px;border-bottom:1px solid var(--border);text-align:right">
+                <button class="btn btn-sm" style="background:#dc2626;color:#fff;border:none"
+                  onclick="reverterMescla('${m.id}')">↩ Reverter</button>
+              </td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`}
+    </div>
+  </div>`;
+}
+
+function toggleMergeHistory() {
+  const body = document.getElementById('merge-hist-body');
+  const chevron = document.getElementById('merge-hist-chevron');
+  if (!body) return;
+  const open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : 'block';
+  if (chevron) chevron.style.transform = open ? '' : 'rotate(90deg)';
+}
+
+function reverterMescla(mergeId) {
+  const hist = DB.mergeHistory || [];
+  const m = hist.find(x => x.id === mergeId);
+  if (!m) return alert('Mesclagem não encontrada.');
+
+  const qtd = (m.notasTransferidas || []).length;
+  if (!confirm(
+    `↩ Reverter mesclagem?\n\n` +
+    `• "${m.clienteRemovido?.nome}" será recriado\n` +
+    `• ${qtd} lançamento(s) — R$ ${fmtBR(m.totalValor||0)} serão devolvidos\n` +
+    `• Os dados de CRM também serão revertidos\n\nConfirma?`
+  )) return;
+
+  // Recria o cliente removido
+  if (!DB.clientes.find(c => c.id === m.clienteRemovido.id)) {
+    DB.clientes.push(JSON.parse(JSON.stringify(m.clienteRemovido)));
+  }
+
+  // Devolve lançamentos (nome + vendedor originais)
+  (m.notasTransferidas || []).forEach(t => {
+    const n = DB.notas.find(x => x.id === t.id);
+    if (n) {
+      n.cliente = t.nomeAntigo;
+      n.vendedor = t.vendedorAntigo;
+    }
+  });
+
+  // Devolve CRM
+  const crmIds = new Set(m.crmTransferidos || []);
+  (DB.crm || []).forEach(c => {
+    if (crmIds.has(c.id)) c.cliente = m.clienteRemovido?.nome || c.cliente;
+  });
+
+  // Remove do histórico
+  DB.mergeHistory = hist.filter(x => x.id !== mergeId);
+
+  logAudit('Reverter Mesclagem', `"${m.clienteRemovido?.nome}" restaurado de "${m.clientePrincipalNome}" — ${qtd} lançamento(s) devolvido(s)`);
+  saveDB();
+  renderParametros();
+  alert(`✅ Reversão concluída!\n• "${m.clienteRemovido?.nome}" recriado\n• ${qtd} lançamento(s) devolvido(s)`);
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 // ── Permissões por Usuário ────────────────────────────────────────────────────
 let _permUsuarioSelecionado = '';
