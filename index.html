@@ -693,14 +693,16 @@ const PERM_DEFAULTS = {
     clientes:'modificar', importar:'modificar', parametros:'ocultar',
     templates:'modificar', configuracoes:'ocultar',
     gerarRelatorio:'modificar', exportarPlanilha:'modificar',
-    enviarEmail:'modificar', enviarWhatsapp:'modificar'
+    enviarEmail:'modificar', enviarWhatsapp:'modificar',
+    extornarBaixa:'ocultar'
   },
   consulta: {
     contasReceber:'consultar', vencidos:'consultar', pagos:'consultar', crm:'consultar', vendedores:'consultar',
     clientes:'consultar', importar:'ocultar', parametros:'ocultar',
     templates:'ocultar', configuracoes:'ocultar',
     gerarRelatorio:'consultar', exportarPlanilha:'consultar',
-    enviarEmail:'ocultar', enviarWhatsapp:'ocultar'
+    enviarEmail:'ocultar', enviarWhatsapp:'ocultar',
+    extornarBaixa:'ocultar'
   }
 };
 
@@ -2972,9 +2974,10 @@ function filterPagos() {
         ${atrasado ? `<span style="margin-left:6px;font-size:10px;background:#fef2f2;color:#b91c1c;padding:1px 6px;border-radius:8px;font-weight:700">${diasAtr}d atraso</span>` : (n.dataPagamento ? `<span style="margin-left:6px;font-size:10px;background:#dcfce7;color:#15803d;padding:1px 6px;border-radius:8px;font-weight:700">Em dia</span>` : '')}
       </td>
       <td class="text-right"><b>${fmt(n.valor)}</b></td>
-      ${canModify('vencidos')||canModify('contas-receber') ? `<td style="white-space:nowrap">
-        <button class="btn btn-ghost btn-xs" onclick="openNotaForm('${n.id}')" title="Ver/Editar">✏️</button>
-      </td>` : '<td></td>'}
+      <td style="white-space:nowrap">
+        ${canModify('vencidos')||canModify('contas-receber') ? `<button class="btn btn-ghost btn-xs" onclick="openNotaForm('${n.id}')" title="Ver/Editar">✏️</button>` : ''}
+        ${(isAdmin()||canModify('extornarBaixa')) ? `<button class="btn btn-ghost btn-xs" onclick="extornarBaixa('${n.id}')" title="Extornar baixa" style="color:#d97706;font-size:14px">↩</button>` : ''}
+      </td>
     </tr>`;
   }).join('');
 
@@ -3018,6 +3021,20 @@ function exportPagos() {
   const blob = new Blob(['﻿'+csv], {type:'text/csv;charset=utf-8'});
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
   a.download = `recebimentos_pagos_${today()}.csv`; a.click();
+}
+
+function extornarBaixa(id) {
+  const n = DB.notas.find(x => x.id === id);
+  if (!n) return;
+  const destino = (n.vencimento && n.vencimento < today()) ? 'Recebimentos Vencidos' : 'Contas a Receber';
+  if (!confirm(`↩ Extornar baixa da NF ${n.nf} — ${n.cliente}?\n\nO lançamento voltará para "${destino}".\n\nConfirma?`)) return;
+  addHist(n, 'Extorno de Baixa', `Baixa revertida. Retornado para ${destino}`);
+  logAudit('Extorno de Baixa', `NF ${n.nf} — ${n.cliente} — R$ ${fmt(n.valor)}`);
+  n.baseStatus = null;
+  n.dataPagamento = null;
+  saveDB();
+  filterPagos();
+  alert(`✅ Lançamento extornado com sucesso!\nRetornou para "${destino}".`);
 }
 
 function buildActionBtns(n, s) {
@@ -6439,6 +6456,7 @@ function renderParametros(){
           { key:'contasReceber', label:'Contas a Receber' },
           { key:'vencidos',      label:'Recebimentos Vencidos' },
           { key:'pagos',         label:'Recebimentos Pagos' },
+          { key:'extornarBaixa', label:'↩ Extornar Baixa' },
           { key:'crm',           label:'CRM – Tratativas' },
           { key:'vendedores',    label:'Cadastro de Vendedores' },
           { key:'clientes',      label:'Cadastro de Clientes' },
