@@ -4312,17 +4312,70 @@ function addWhatsCliExtra() {
   div.querySelector('input').focus();
 }
 
+// ── Detecção de clientes duplicados ──────────────────────────────────────────
+function detectarDuplicatas() {
+  // Retorna Map<id, { motivo, pares: id[] }>
+  const result = new Map();
+  const clientes = DB.clientes || [];
+
+  const normDoc = d => (d||'').replace(/[\.\-\/]/g,'').trim();
+
+  for (let i = 0; i < clientes.length; i++) {
+    for (let j = i + 1; j < clientes.length; j++) {
+      const a = clientes[i], b = clientes[j];
+      const docA = normDoc(a.doc), docB = normDoc(b.doc);
+
+      // 1. Mesmo CNPJ/CPF preenchido → duplicata confirmada
+      if (docA && docB && docA === docB) {
+        const mot = `⚠️ Mesmo CNPJ/CPF: ${a.doc}`;
+        if (!result.has(a.id)) result.set(a.id, { motivo: mot, pares: [] });
+        if (!result.has(b.id)) result.set(b.id, { motivo: mot, pares: [] });
+        result.get(a.id).pares.push(b.id);
+        result.get(b.id).pares.push(a.id);
+        continue;
+      }
+
+      // 2. Nomes similares — só alerta se pelo menos um não tem CNPJ
+      const score = scoreSimilar(a.nome, b.nome);
+      if (score >= 0.75) {
+        // Se ambos têm CNPJ e são diferentes → empresas distintas confirmadas
+        if (docA && docB) continue;
+        // Um ou ambos sem CNPJ → não é possível confirmar se são diferentes
+        const mot = !docA && !docB
+          ? `⚠️ Nomes similares, ambos sem CNPJ`
+          : `⚠️ Nomes similares, ${!docA ? '"'+a.nome+'"' : '"'+b.nome+'"'} sem CNPJ`;
+        if (!result.has(a.id)) result.set(a.id, { motivo: mot, pares: [] });
+        if (!result.has(b.id)) result.set(b.id, { motivo: mot, pares: [] });
+        result.get(a.id).pares.push(b.id);
+        result.get(b.id).pares.push(a.id);
+      }
+    }
+  }
+  return result;
+}
+
 function renderClientes() {
+  const dups = detectarDuplicatas();
+  const totalAlerts = dups.size;
+
   const rows=[...DB.clientes].sort((a,b)=>(a.nome||'').localeCompare(b.nome||'','pt-BR',{sensitivity:'base'})).map(c=>{
     const todosEmails = getEmailsCliente(c);
     const emailCol = todosEmails.length === 0 ? '—' : todosEmails[0] + (todosEmails.length > 1 ? ` <span style="background:#3b82f6;color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:10px;margin-left:4px" title="${todosEmails.join('\n')}">+${todosEmails.length-1}</span>` : '');
     const todosWhats = getWhatsCliente(c);
     const whatsCol = todosWhats.length === 0 ? '—' : todosWhats[0] + (todosWhats.length > 1 ? ` <span style="background:#16a34a;color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:10px;margin-left:4px" title="${todosWhats.join('\n')}">+${todosWhats.length-1}</span>` : '');
-    return `<tr>
-    <td><b>${c.nome}</b></td><td>${c.doc||'—'}</td><td>${emailCol}</td><td>${whatsCol}</td>
+
+    const dupInfo = dups.get(c.id);
+    const rowBg   = dupInfo ? 'background:#fffbeb;outline:2px solid #f59e0b;outline-offset:-1px' : '';
+    const nomeBadge = dupInfo
+      ? `<b>${c.nome}</b> <span title="${dupInfo.motivo}" style="background:#f59e0b;color:#000;font-size:10px;font-weight:700;padding:2px 6px;border-radius:8px;cursor:help;margin-left:4px">⚠️ duplicata</span>`
+      : `<b>${c.nome}</b>`;
+
+    return `<tr style="${rowBg}">
+    <td>${nomeBadge}</td><td>${c.doc||'—'}</td><td>${emailCol}</td><td>${whatsCol}</td>
     <td>${c.empresa||'—'}</td><td>${c.vend1||'—'}</td>
     <td><span class="chip" style="background:${c.situacao==='Inativo'?'#f1f5f9':'#dcfce7'};color:${c.situacao==='Inativo'?'#475569':'#15803d'}">${c.situacao||'Ativo'}</span></td>
     <td class="gap-8">
+      ${dupInfo ? `<button class="btn btn-sm" style="background:#f59e0b;color:#000;font-weight:700;border:none" onclick="editCliente('${c.id}')" title="${dupInfo.motivo}">🔀 Mesclar</button>` : ''}
       <button class="btn btn-ghost btn-xs" title="Anexos (${(c.anexos||[]).length})" onclick="openAnexosModal('cliente','${c.id}')">📎${(c.anexos||[]).length>0?` <span style="background:#3b82f6;color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:10px">${(c.anexos||[]).length}</span>`:''}</button>
       <button class="btn btn-ghost btn-xs" onclick="editCliente('${c.id}')">✏️</button>
       <button class="btn btn-ghost btn-xs" onclick="delCliente('${c.id}')">🗑️</button>
@@ -4338,6 +4391,14 @@ function renderClientes() {
           <button class="btn btn-primary btn-sm" onclick="openCliForm()">+ Novo Cliente</button>
         </div>
       </div>
+      ${totalAlerts > 0 ? `
+      <div style="background:#fffbeb;border:2px solid #f59e0b;border-radius:8px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:12px">
+        <span style="font-size:20px">⚠️</span>
+        <div>
+          <div style="font-weight:700;color:#92400e">${totalAlerts} cadastro(s) com possível duplicata</div>
+          <div style="font-size:12px;color:#b45309;margin-top:2px">Clientes destacados em amarelo precisam ser mesclados ou ter o CNPJ preenchido para confirmar que são empresas distintas.</div>
+        </div>
+      </div>` : ''}
       <div class="tbl-wrap"><table>
         <thead><tr><th>Nome</th><th>CPF/CNPJ</th><th>E-mail</th><th>WhatsApp</th><th>Empresa</th><th>Vendedor</th><th>Situação</th><th>Ações</th></tr></thead>
         <tbody>${rows||'<tr><td colspan="8" class="text-center text-muted" style="padding:20px">Nenhum cliente cadastrado</td></tr>'}</tbody>
