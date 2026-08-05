@@ -2581,6 +2581,8 @@ function filterContasReceber() {
 function pagarContasReceber(id) {
   const n = DB.notas.find(x=>x.id===id); if(!n) return;
   if (!confirm(`✅ Confirmar recebimento:\n\nNF ${n.nf} — ${n.cliente}\nValor: ${fmt(n.valor)}\nVencimento: ${fmtDate(n.vencimento)}\n\nO título será baixado como Pago.`)) return;
+  n.statusAntesPagamento = n.baseStatus; // guarda status original para extorno
+  n.origemPagamento = 'contas-receber';
   n.baseStatus = 'pago';
   if (!n.dataPagamento) n.dataPagamento = today();
   addHist(n, 'Pago', 'Baixado como pago via Contas a Receber');
@@ -2675,9 +2677,10 @@ function filterVencidos() {
   const ate = document.getElementById('v-ate')?.value||'';
   const notas = DB.notas.filter(n=>{
     const s=calcStatus(n);
-    // Recebimentos Vencidos nunca mostra a_vencer nem reprogramado (não expirado) — esses ficam em Contas a Receber
+    // Recebimentos Vencidos nunca mostra a_vencer, reprogramado nem pago — pagos ficam em Recebimentos Pagos
     if(s==='a_vencer') return false;
     if(s==='reprogramado') return false;
+    if(s==='pago') return false;
     if (_filtroReprogAtivo) {
       // Modo reprogramados expirados: notas que foram reprogramadas mas a data venceu novamente
       if (!n.reprogramado) return false;
@@ -3026,15 +3029,28 @@ function exportPagos() {
 function extornarBaixa(id) {
   const n = DB.notas.find(x => x.id === id);
   if (!n) return;
-  const destino = (n.vencimento && n.vencimento < today()) ? 'Recebimentos Vencidos' : 'Contas a Receber';
-  if (!confirm(`↩ Extornar baixa da NF ${n.nf} — ${n.cliente}?\n\nO lançamento voltará para "${destino}".\n\nConfirma?`)) return;
-  addHist(n, 'Extorno de Baixa', `Baixa revertida. Retornado para ${destino}`);
-  logAudit('Extorno de Baixa', `NF ${n.nf} — ${n.cliente} — R$ ${fmt(n.valor)}`);
-  n.baseStatus = null;
+  // Determina destino: usa a origem gravada ou fallback pela data de vencimento
+  const origemGravada = n.origemPagamento; // 'contas-receber' | 'vencidos' | undefined
+  const vencida = n.vencimento && n.vencimento < today();
+  const paginaDestino = origemGravada === 'contas-receber' ? 'contas-receber'
+                      : origemGravada === 'vencidos'       ? 'vencidos'
+                      : vencida                            ? 'vencidos'
+                      : 'contas-receber';
+  const destinoLabel = paginaDestino === 'vencidos' ? 'Recebimentos Vencidos' : 'Contas a Receber';
+  const statusAntes = n.statusAntesPagamento ?? null;
+  const statusLabel = statusAntes ? ({aguardar:'Aguardar',aguardando_cartorio:'Cartório',protestado:'Protestado',perdido:'Perdido',processo_judicial:'Processo Judicial'}[statusAntes] || statusAntes) : (vencida ? 'Vencido' : 'A Vencer');
+
+  if (!confirm(`↩ Extornar baixa da NF ${n.nf} — ${n.cliente}?\n\nO lançamento voltará para "${destinoLabel}" com status "${statusLabel}".\n\nConfirma?`)) return;
+
+  addHist(n, 'Extorno de Baixa', `Baixa revertida. Retornado para ${destinoLabel} (status: ${statusLabel})`);
+  logAudit('Extorno de Baixa', `NF ${n.nf} — ${n.cliente} — R$ ${fmt(n.valor)} → ${destinoLabel}`);
+  n.baseStatus = statusAntes;
   n.dataPagamento = null;
+  delete n.statusAntesPagamento;
+  delete n.origemPagamento;
   saveDB();
-  filterPagos();
-  alert(`✅ Lançamento extornado com sucesso!\nRetornou para "${destino}".`);
+  navigate(paginaDestino);
+  setTimeout(() => alert(`✅ Extornado!\nRetornou para "${destinoLabel}".`), 200);
 }
 
 function buildActionBtns(n, s) {
@@ -4161,8 +4177,12 @@ function setBase(id, status) {
   const n = DB.notas.find(x=>x.id===id); if(!n) return;
   const lbl = {pago:'Pago',perdido:'Perdido',aguardar:'Aguardar',processo_judicial:'Processo Judicial'}[status]||status;
   if (!confirm(`Confirmar: marcar como "${lbl}"?`)) return;
+  if (status === 'pago') {
+    n.statusAntesPagamento = n.baseStatus; // guarda status original para extorno
+    n.origemPagamento = 'vencidos';
+    if (!n.dataPagamento) n.dataPagamento = today();
+  }
   n.baseStatus = status;
-  if (status === 'pago' && !n.dataPagamento) n.dataPagamento = today();
   addHist(n, lbl, `Status alterado manualmente para ${lbl}`);
   logAudit('Status: '+lbl, `NF ${n.nf} — ${n.cliente} — R$ ${fmt(n.valor)}`);
   saveDB(); _reRenderCurrentReceivables();
