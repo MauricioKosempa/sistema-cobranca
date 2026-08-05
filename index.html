@@ -4312,21 +4312,29 @@ function addWhatsCliExtra() {
   div.querySelector('input').focus();
 }
 
-function selecionarMescla(id, nome, qtd) {
-  const inp = document.getElementById('cf-mesclar');
-  const busca = document.getElementById('cf-mesclar-busca');
-  const sel = document.getElementById('cf-mesclar-sel');
-  const lista = document.getElementById('cf-mesclar-lista');
-  if (inp) inp.value = id;
+function selecionarMescla(el) {
+  const id   = el.dataset.id;
+  const nome = el.dataset.nome;
+  const qtd  = el.dataset.qtd;
+  const inp  = document.getElementById('cf-mesclar');
+  const busca= document.getElementById('cf-mesclar-busca');
+  const sel  = document.getElementById('cf-mesclar-sel');
+  const lista= document.getElementById('cf-mesclar-lista');
+  if (inp)  inp.value   = id;
   if (busca) busca.value = nome;
-  if (sel) sel.textContent = `✅ Selecionado: ${nome}${qtd>0?' ('+qtd+' lançamentos)':''}`;
+  if (sel)  sel.innerHTML = `<b style="color:#15803d">✅ Selecionado:</b> ${nome}${qtd>0?' <span style="color:var(--text-muted)">('+qtd+' lançamentos)</span>':''}`;
   if (lista) lista.style.display = 'none';
 }
 
 function filtrarMesclaOpts(q) {
   const termo = (q||'').toLowerCase().trim();
+  // Limpa seleção anterior se usuário digitou algo novo
+  const inp = document.getElementById('cf-mesclar');
+  if (inp) inp.value = '';
+  const sel = document.getElementById('cf-mesclar-sel');
+  if (sel && termo) sel.innerHTML = '<span style="color:var(--text-muted)">Nenhum selecionado</span>';
   document.querySelectorAll('.mesclar-opt').forEach(el => {
-    el.style.display = !termo || el.dataset.search.includes(termo) ? '' : 'none';
+    el.style.display = !termo || (el.dataset.nome||'').toLowerCase().includes(termo) ? '' : 'none';
   });
 }
 
@@ -4525,11 +4533,16 @@ function openCliForm(id){
         const opcoesHtml = outros.map(x => {
           const qtd = DB.notas.filter(n=>n.cliente===x.nome).length;
           const isDup = dupsPares.includes(x.id);
-          return `<div class="mesclar-opt" data-id="${x.id}"
-            data-search="${(x.nome||'').toLowerCase()}"
-            style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;gap:8px;${isDup?'background:#fffbeb;':''}font-size:13px"
-            onmousedown="selecionarMescla('${x.id}','${(x.nome||'').replace(/'/g,"\\'")}',${qtd})"
-            onmouseover="this.style.background='#f0f9ff'" onmouseout="this.style.background='${isDup?'#fffbeb':'#fff'}'">
+          const bgNormal = isDup ? '#fffbeb' : '#fff';
+          return `<div class="mesclar-opt"
+            data-id="${x.id}"
+            data-nome="${(x.nome||'').replace(/"/g,'&quot;')}"
+            data-qtd="${qtd}"
+            data-search="${(x.nome||'').toLowerCase().replace(/"/g,'&quot;')}"
+            style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;gap:8px;background:${bgNormal};font-size:13px"
+            onmousedown="selecionarMescla(this)"
+            onmouseover="this.style.background='#dbeafe'"
+            onmouseout="this.style.background='${bgNormal}'">
             ${isDup?'<span title="Possível duplicata detectada" style="font-size:14px">⚠️</span>':'<span style="font-size:14px;opacity:0">·</span>'}
             <span style="flex:1;font-weight:${isDup?'700':'400'}">${x.nome}</span>
             ${qtd>0?`<span style="font-size:11px;color:var(--text-muted)">${qtd} lançamento(s)</span>`:''}
