@@ -3147,11 +3147,24 @@ function _buildKpiPagosHtml() {
   const totalJuros    = notas.reduce((s,n) => s + Number(n.juros    || 0), 0);
   const totalDesconto = notas.reduce((s,n) => s + Number(n.desconto || 0), 0);
   const qtd = notas.length;
+  // Total a vencer (a_vencer + reprogramado), filtrando por empresa se ativo
+  const aVencer = (DB.notas||[]).filter(n => {
+    const s = calcStatus(n);
+    if (s !== 'a_vencer' && s !== 'reprogramado') return false;
+    if (_empresaFiltro && n.empresa !== _empresaFiltro) return false;
+    return true;
+  });
+  const totalAVencer = aVencer.reduce((s,n) => s + Number(n.valor||0), 0);
   return `
     <div class="kpi success" style="border-color:#16a34a;border-width:2px;cursor:pointer" onclick="navigate('pagos')" title="${fmt(totalRecebido)}">
       <div class="label" style="color:#15803d">💰 Total Recebido</div>
       <div class="value" style="color:#15803d">${fmtKpi(totalRecebido)}</div>
       <div class="sub">${qtd} título(s) pago(s)</div>
+    </div>
+    <div class="kpi" style="border-color:#6366f1;border-width:2px;cursor:pointer" onclick="navigate('contas-receber')" title="${fmt(totalAVencer)}">
+      <div class="label" style="color:#4338ca">📅 A Vencer</div>
+      <div class="value" style="color:#4338ca">${fmtKpi(totalAVencer)}</div>
+      <div class="sub">${aVencer.length} título(s)</div>
     </div>
     <div class="kpi" style="border-color:#dc2626;border-width:2px" title="${fmt(totalMulta)}">
       <div class="label" style="color:#dc2626">⚠️ Multas</div>
