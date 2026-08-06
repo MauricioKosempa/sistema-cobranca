@@ -209,6 +209,7 @@
     <a data-page="crm"><span class="icon">💬</span> CRM – Tratativas</a>
     <a data-page="vendedores"><span class="icon">👤</span> Cadastro de Vendedores</a>
     <a data-page="clientes"><span class="icon">🏢</span> Cadastro de Clientes</a>
+    <a data-page="instituicoes"><span class="icon">🏦</span> Instituições Financeiras</a>
     <a data-page="importar"><span class="icon">📥</span> Importar Planilha</a>
     <a data-page="parametros"><span class="icon">⚙️</span> Parâmetros</a>
     <a data-page="templates"><span class="icon">✉️</span> Templates</a>
@@ -276,7 +277,7 @@ function _seedVendedores() {
 
 function defaultDB() {
   return {
-    notas: [], clientes: [], vendedores: [],
+    notas: [], clientes: [], vendedores: [], contasBancarias: [],
     empresas: ['Reconlog','Reconlog Rental','RL Estruturas','RL Montagens','RL Brasil'],
     faturamento: {}, faturamentoEmp: _seedFaturamento(), importacoes: [], crm: [],
     historicoInadimplencia: [],
@@ -355,6 +356,7 @@ let DB = (() => {
       }
     });
     if (!d.crm) d.crm = [];
+    if (!d.contasBancarias) d.contasBancarias = [];
     if (!d.config) d.config = defaultDB().config;
     if (!d.config.sharePointUrl) d.config.sharePointUrl = 'gruporecon.sharepoint.com:/sites/SistemadeCobrana:';
     if (!d.config.onedrivePath) d.config.onedrivePath = 'reconlog_cobranca_db.json';
@@ -690,7 +692,7 @@ function isGestor() {
 const PERM_DEFAULTS = {
   gestor: {
     contasReceber:'modificar', vencidos:'modificar', pagos:'consultar', crm:'modificar', vendedores:'modificar',
-    clientes:'modificar', importar:'modificar', parametros:'ocultar',
+    clientes:'modificar', instituicoes:'modificar', importar:'modificar', parametros:'ocultar',
     templates:'modificar', configuracoes:'ocultar',
     gerarRelatorio:'modificar', exportarPlanilha:'modificar',
     enviarEmail:'modificar', enviarWhatsapp:'modificar',
@@ -698,7 +700,7 @@ const PERM_DEFAULTS = {
   },
   consulta: {
     contasReceber:'consultar', vencidos:'consultar', pagos:'consultar', crm:'consultar', vendedores:'consultar',
-    clientes:'consultar', importar:'ocultar', parametros:'ocultar',
+    clientes:'consultar', instituicoes:'ocultar', importar:'ocultar', parametros:'ocultar',
     templates:'ocultar', configuracoes:'ocultar',
     gerarRelatorio:'consultar', exportarPlanilha:'consultar',
     enviarEmail:'ocultar', enviarWhatsapp:'ocultar',
@@ -1659,9 +1661,10 @@ const PAGES = {
   vencidos:        { title: 'Recebimentos Vencidos',   render: renderVencidos },
   pagos:           { title: 'Recebimentos Pagos',       render: renderPagos },
   crm:          { title: 'CRM – Histórico de Tratativas', render: renderCRM },
-  vendedores:   { title: 'Cadastro de Vendedores',  render: renderVendedores },
-  clientes:     { title: 'Cadastro de Clientes',    render: renderClientes },
-  importar:     { title: 'Importar Planilha',       render: renderImportar },
+  vendedores:   { title: 'Cadastro de Vendedores',        render: renderVendedores },
+  clientes:     { title: 'Cadastro de Clientes',          render: renderClientes },
+  instituicoes: { title: 'Instituições Financeiras',      render: renderInstituicoes },
+  importar:     { title: 'Importar Planilha',              render: renderImportar },
   parametros:   { title: 'Parâmetros',              render: renderParametros },
   templates:    { title: 'Templates de Mensagem',   render: renderTemplates },
   configuracoes:{ title: 'Configurações',            render: renderConfiguracoes }
@@ -1672,7 +1675,7 @@ function navigate(page) {
   if (!isAdmin() && page !== 'dashboard') {
     const pageToFeat = {
       'contas-receber':'contasReceber', vencidos:'vencidos', pagos:'pagos', crm:'crm', vendedores:'vendedores', clientes:'clientes',
-      importar:'importar', parametros:'parametros', templates:'templates', configuracoes:'configuracoes'
+      instituicoes:'instituicoes', importar:'importar', parametros:'parametros', templates:'templates', configuracoes:'configuracoes'
     };
     const feat = pageToFeat[page];
     if (feat && !canView(feat)) { page = 'dashboard'; }
@@ -2598,38 +2601,38 @@ function filterContasReceber() {
 function abrirModalPagamento(id, origem) {
   const n = DB.notas.find(x=>x.id===id); if(!n) return;
   const vTit = Number(n.valor||0);
+  const contas = (DB.contasBancarias||[]);
   openModal(`<h2>✅ Confirmar Recebimento</h2>
     <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:14px 16px;margin-bottom:16px">
       <div style="font-size:13px;font-weight:700;color:#14532d;margin-bottom:4px">NF ${n.nf||'—'} — ${n.cliente}</div>
       <div style="font-size:12px;color:#15803d">Valor do Título: <b>${fmt(vTit)}</b> &nbsp;|&nbsp; Vencimento: ${fmtDate(n.vencimento)}</div>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
-      <div class="form-group" style="margin:0">
-        <label style="color:#dc2626">Multa (R$)</label>
-        <input id="mp-multa" type="number" step="0.01" min="0" value="0"
-          oninput="_calcTotalReceber(${vTit.toFixed(2)})"
-          style="border:1px solid #fca5a5">
-      </div>
-      <div class="form-group" style="margin:0">
-        <label style="color:#0284c7">Juros (R$)</label>
-        <input id="mp-juros" type="number" step="0.01" min="0" value="0"
-          oninput="_calcTotalReceber(${vTit.toFixed(2)})"
-          style="border:1px solid #93c5fd">
-      </div>
-    </div>
-    <div class="form-group">
-      <label style="color:#d97706">Desconto (R$)</label>
-      <input id="mp-desconto" type="number" step="0.01" min="0" value="0"
-        oninput="_calcTotalReceber(${vTit.toFixed(2)})"
-        style="border:1px solid #fde68a">
-    </div>
-    <div id="mp-total-preview" style="background:#f0fdf4;border:1px solid #86efac;border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#14532d">
-      <b>Total a Receber:</b> <span id="mp-total-val" style="font-size:16px;font-weight:700">${fmt(vTit)}</span>
-    </div>
     <div class="form-group">
       <label>Valor Efetivamente Recebido *</label>
       <input id="mp-valor" type="number" step="0.01" min="0" value="${vTit.toFixed(2)}"
+        oninput="_calcDifPagamento(${vTit.toFixed(2)})"
         style="font-size:16px;font-weight:700;border:2px solid #16a34a">
+    </div>
+    <div id="mp-dif" style="min-height:32px;margin-bottom:12px"></div>
+    <div class="form-group">
+      <label>Conta de Recebimento</label>
+      <div style="position:relative">
+        <input id="mp-conta-busca" type="text" placeholder="${contas.length ? 'Buscar conta bancária...' : 'Nenhuma conta cadastrada'}"
+          autocomplete="off" oninput="_filtrarContasModal()" onfocus="_filtrarContasModal()"
+          ${contas.length === 0 ? 'disabled' : ''}
+          style="width:100%;border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:13px;box-sizing:border-box">
+        <div id="mp-conta-lista" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--border);border-top:none;border-radius:0 0 6px 6px;max-height:180px;overflow-y:auto;z-index:999;box-shadow:0 4px 12px rgba(0,0,0,.1)">
+          ${contas.length === 0
+            ? `<div style="padding:10px 12px;font-size:12px;color:var(--text-muted)">Cadastre contas em Instituições Financeiras.</div>`
+            : contas.map(c => `<div class="mp-conta-opt" data-label="${c.banco} — Ag. ${c.agencia} / Cta ${c.conta}"
+                onclick="_selecionarContaModal('${c.id}','${c.banco} — Ag. ${c.agencia} / Cta ${c.conta}')"
+                style="padding:9px 12px;font-size:13px;cursor:pointer;border-bottom:1px solid #f1f5f9"
+                onmouseover="this.style.background='#f0fdf4'" onmouseout="this.style.background=''">${c.banco} — Ag. ${c.agencia} / Cta ${c.conta}</div>`).join('')
+          }
+        </div>
+      </div>
+      <input id="mp-conta-id" type="hidden" value="">
+      <div id="mp-conta-sel" style="margin-top:5px;font-size:12px;color:#15803d;font-weight:600;min-height:18px"></div>
     </div>
     <div class="form-group">
       <label>Data do Pagamento</label>
@@ -2639,39 +2642,71 @@ function abrirModalPagamento(id, origem) {
       <button class="btn btn-primary" onclick="_confirmarPagamento('${id}','${origem}')">✅ Confirmar Baixa</button>
       <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
     </div>`);
+  // Fechar dropdown ao clicar fora
+  setTimeout(() => {
+    document.addEventListener('click', function _fora(e) {
+      if (!e.target.closest('#mp-conta-busca') && !e.target.closest('#mp-conta-lista')) {
+        const l = document.getElementById('mp-conta-lista');
+        if (l) l.style.display = 'none';
+        document.removeEventListener('click', _fora);
+      }
+    });
+  }, 100);
 }
 
-function _calcTotalReceber(vTit) {
-  const multa    = parseFloat(document.getElementById('mp-multa')?.value)   || 0;
-  const juros    = parseFloat(document.getElementById('mp-juros')?.value)    || 0;
-  const desconto = parseFloat(document.getElementById('mp-desconto')?.value) || 0;
-  const total = vTit + multa + juros - desconto;
-  const el = document.getElementById('mp-total-val');
-  if (el) el.textContent = fmt(total);
-  const inp = document.getElementById('mp-valor');
-  if (inp) inp.value = total > 0 ? total.toFixed(2) : '0.00';
+function _filtrarContasModal() {
+  const q = (document.getElementById('mp-conta-busca')?.value||'').toLowerCase();
+  const lista = document.getElementById('mp-conta-lista');
+  if (!lista) return;
+  lista.style.display = 'block';
+  lista.querySelectorAll('.mp-conta-opt').forEach(el => {
+    el.style.display = el.dataset.label.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+
+function _selecionarContaModal(id, label) {
+  document.getElementById('mp-conta-id').value = id;
+  document.getElementById('mp-conta-busca').value = label;
+  document.getElementById('mp-conta-sel').textContent = '✅ ' + label;
+  const lista = document.getElementById('mp-conta-lista');
+  if (lista) lista.style.display = 'none';
+}
+
+function _calcDifPagamento(vTit) {
+  const recebido = parseFloat(document.getElementById('mp-valor')?.value) || 0;
+  const dif = recebido - vTit;
+  const el = document.getElementById('mp-dif');
+  if (!el) return;
+  if (Math.abs(dif) < 0.005) { el.innerHTML = ''; return; }
+  if (dif > 0) {
+    el.innerHTML = `<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:6px;padding:7px 12px;font-size:12px;color:#14532d">📈 <b>Juros apropriados automaticamente:</b> ${fmt(dif)}</div>`;
+  } else {
+    el.innerHTML = `<div style="background:#fff7ed;border:1px solid #fdba74;border-radius:6px;padding:7px 12px;font-size:12px;color:#9a3412">🏷️ <b>Desconto concedido automaticamente:</b> ${fmt(Math.abs(dif))}</div>`;
+  }
 }
 
 function _confirmarPagamento(id, origem) {
   const n = DB.notas.find(x=>x.id===id); if(!n) return;
-  const valorPago  = parseFloat(document.getElementById('mp-valor')?.value);
+  const valorPago = parseFloat(document.getElementById('mp-valor')?.value);
   if (isNaN(valorPago) || valorPago <= 0) { alert('Informe o valor recebido.'); return; }
-  const multa    = Math.round((parseFloat(document.getElementById('mp-multa')?.value)   || 0) * 100) / 100;
-  const juros    = Math.round((parseFloat(document.getElementById('mp-juros')?.value)    || 0) * 100) / 100;
-  const desconto = Math.round((parseFloat(document.getElementById('mp-desconto')?.value) || 0) * 100) / 100;
-  const dataPag  = document.getElementById('mp-data')?.value || today();
+  const dataPag    = document.getElementById('mp-data')?.value || today();
+  const contaId    = document.getElementById('mp-conta-id')?.value || '';
+  const contaLabel = document.getElementById('mp-conta-busca')?.value || '';
+  const dif = valorPago - Number(n.valor||0);
   n.statusAntesPagamento = n.baseStatus;
-  n.origemPagamento = origem;
-  n.baseStatus    = 'pago';
-  n.dataPagamento = dataPag;
-  n.valorPago     = Math.round(valorPago * 100) / 100;
-  n.multa         = multa;
-  n.juros         = juros;
-  n.desconto      = desconto;
+  n.origemPagamento  = origem;
+  n.baseStatus       = 'pago';
+  n.dataPagamento    = dataPag;
+  n.valorPago        = Math.round(valorPago * 100) / 100;
+  n.juros            = dif >  0.005 ? Math.round(dif * 100) / 100 : 0;
+  n.desconto         = dif < -0.005 ? Math.round(Math.abs(dif) * 100) / 100 : 0;
+  n.multa            = 0;
+  n.contaRecebimento = contaLabel || '';
+  n.contaId          = contaId || '';
   const partes = [];
-  if (multa   > 0) partes.push(`multa ${fmt(multa)}`);
-  if (juros   > 0) partes.push(`juros ${fmt(juros)}`);
-  if (desconto> 0) partes.push(`desconto -${fmt(desconto)}`);
+  if (n.juros   > 0) partes.push(`juros ${fmt(n.juros)}`);
+  if (n.desconto> 0) partes.push(`desconto -${fmt(n.desconto)}`);
+  if (contaLabel) partes.push(`conta: ${contaLabel}`);
   const extra = partes.length ? ' (' + partes.join(', ') + ')' : '';
   addHist(n, 'Pago', `Baixado como pago. Valor recebido: ${fmt(n.valorPago)}${extra}`);
   logAudit('Pago', `NF ${n.nf} — ${n.cliente} — Recebido: ${fmt(n.valorPago)}${extra}`);
@@ -3070,11 +3105,9 @@ function filterPagos() {
     const atrasado   = n.dataPagamento && n.vencimento && n.dataPagamento > n.vencimento;
     const diasAtr    = atrasado ? Math.round((new Date(n.dataPagamento) - new Date(n.vencimento)) / 86400000) : 0;
     const valorPago  = n.valorPago ?? n.valor;
-    // Juros e Multa juntos na mesma célula
-    const multaTag   = n.multa  > 0 ? `<span style="font-size:10px;background:#fee2e2;color:#b91c1c;padding:1px 6px;border-radius:8px;font-weight:700;display:inline-block;margin-bottom:2px">Multa +${fmt(n.multa)}</span>` : '';
-    const jurosTag   = n.juros  > 0 ? `<span style="font-size:10px;background:#dbeafe;color:#1d4ed8;padding:1px 6px;border-radius:8px;font-weight:700;display:inline-block">Juros +${fmt(n.juros)}</span>` : '';
-    const jmCel      = (multaTag || jurosTag) ? `<div style="display:flex;flex-direction:column;gap:2px;align-items:flex-end">${multaTag}${jurosTag}</div>` : '—';
+    const jurosTag   = n.juros  > 0 ? `<span style="font-size:10px;background:#dbeafe;color:#1d4ed8;padding:1px 6px;border-radius:8px;font-weight:700;display:inline-block">+${fmt(n.juros)}</span>` : '—';
     const descontoCel= n.desconto > 0 ? `<span style="font-size:10px;background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:8px;font-weight:700">-${fmt(n.desconto)}</span>` : '—';
+    const contaCel   = n.contaRecebimento ? `<span style="font-size:11px;color:var(--text-muted)">${n.contaRecebimento}</span>` : '—';
     return `<tr>
       <td><b>${n.nf||'—'}</b></td>
       <td>${n.cliente||'—'}</td>
@@ -3087,8 +3120,9 @@ function filterPagos() {
       </td>
       <td class="text-right"><b>${fmt(n.valor)}</b></td>
       <td class="text-right" style="color:#15803d;font-weight:700">${fmt(valorPago)}</td>
-      <td class="text-right">${jmCel}</td>
+      <td class="text-right">${jurosTag}</td>
       <td class="text-right">${descontoCel}</td>
+      <td>${contaCel}</td>
       <td style="white-space:nowrap">
         ${canModify('vencidos')||canModify('contas-receber') ? `<button class="btn btn-ghost btn-xs" onclick="openNotaForm('${n.id}')" title="Ver/Editar">✏️</button>` : ''}
         ${(isAdmin()||canModify('extornarBaixa')) ? `<button class="btn btn-ghost btn-xs" onclick="extornarBaixa('${n.id}')" title="Extornar baixa" style="color:#d97706;font-size:14px">↩</button>` : ''}
@@ -3097,7 +3131,7 @@ function filterPagos() {
   }).join('');
 
   const empty = notas.length === 0
-    ? `<tr><td colspan="11" style="text-align:center;padding:40px;color:var(--text-muted)">Nenhum recebimento pago encontrado</td></tr>`
+    ? `<tr><td colspan="12" style="text-align:center;padding:40px;color:var(--text-muted)">Nenhum recebimento pago encontrado</td></tr>`
     : '';
 
   document.getElementById('pagos-tbl').innerHTML = `
@@ -3120,8 +3154,9 @@ function filterPagos() {
         ${mkTh('Data Pagamento','dataPagamento')}
         ${mkTh('Valor','valor')}
         <th class="text-right">Valor Pago</th>
-        <th class="text-right">Juros e Multa</th>
+        <th class="text-right">Juros</th>
         <th class="text-right">Desconto</th>
+        <th>Conta</th>
         <th>Ações</th>
       </tr></thead>
       <tbody>${rows}${empty}</tbody>
@@ -3165,11 +3200,6 @@ function _buildKpiPagosHtml() {
       <div class="label" style="color:#4338ca">📅 A Vencer</div>
       <div class="value" style="color:#4338ca">${fmtKpi(totalAVencer)}</div>
       <div class="sub">${aVencer.length} título(s)</div>
-    </div>
-    <div class="kpi" style="border-color:#dc2626;border-width:2px" title="${fmt(totalMulta)}">
-      <div class="label" style="color:#dc2626">⚠️ Multas</div>
-      <div class="value" style="color:#dc2626">${fmtKpi(totalMulta)}</div>
-      <div class="sub">${totalMulta > 0 ? fmt(totalMulta) : 'Nenhuma multa'}</div>
     </div>
     <div class="kpi" style="border-color:#0284c7;border-width:2px" title="${fmt(totalJuros)}">
       <div class="label" style="color:#0284c7">📈 Juros</div>
@@ -3221,12 +3251,12 @@ function setDashPagosPeriodo(tipo) {
 }
 
 function exportPagos() {
-  const rows = [['NF','Cliente','Empresa','Vendedor','Vencimento','Data Pagamento','Valor Título','Valor Pago','Multa','Juros','Desconto']];
+  const rows = [['NF','Cliente','Empresa','Vendedor','Vencimento','Data Pagamento','Valor Título','Valor Pago','Juros','Desconto','Conta']];
   _pagosFiltradas.forEach(n => rows.push([
     n.nf||'', n.cliente||'', n.empresa||'', n.vendedor||'',
     n.vencimento||'', n.dataPagamento||'',
     Number(n.valor||0), Number(n.valorPago ?? n.valor ?? 0),
-    Number(n.multa||0), Number(n.juros||0), Number(n.desconto||0)
+    Number(n.juros||0), Number(n.desconto||0), n.contaRecebimento||''
   ]));
   const csv = rows.map(r=>r.map(c=>typeof c==='string'?`"${c.replace(/"/g,'""')}"`:c).join(';')).join('\r\n');
   const blob = new Blob(['﻿'+csv], {type:'text/csv;charset=utf-8'});
@@ -5409,6 +5439,88 @@ function confirmarImportClientes() {
 }
 
 /* ============================================================
+   INSTITUIÇÕES FINANCEIRAS
+============================================================ */
+function renderInstituicoes() {
+  const lista = DB.contasBancarias || [];
+  document.getElementById('content').innerHTML = `
+    <div class="card">
+      <div class="flex-between mb-16">
+        <div class="card-title" style="margin:0">🏦 Contas Bancárias Cadastradas</div>
+        ${isAdmin()||isGestor() ? `<button class="btn btn-primary btn-sm" onclick="abrirFormInstituicao()">➕ Nova Conta</button>` : ''}
+      </div>
+      ${lista.length === 0
+        ? `<div style="text-align:center;padding:40px;color:var(--text-muted)">Nenhuma conta cadastrada ainda.</div>`
+        : `<table style="width:100%;border-collapse:collapse;font-size:13px">
+            <thead>
+              <tr style="background:#f8fafc">
+                <th style="text-align:left;padding:10px 12px;border-bottom:2px solid var(--border);color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px">Banco</th>
+                <th style="text-align:left;padding:10px 12px;border-bottom:2px solid var(--border);color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px">Agência</th>
+                <th style="text-align:left;padding:10px 12px;border-bottom:2px solid var(--border);color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px">Conta</th>
+                ${isAdmin()||isGestor() ? `<th style="text-align:center;padding:10px 12px;border-bottom:2px solid var(--border);width:100px">Ações</th>` : ''}
+              </tr>
+            </thead>
+            <tbody>
+              ${lista.map((c,i) => `
+                <tr style="background:${i%2===0?'#fff':'#f8fafc'}">
+                  <td style="padding:10px 12px;border-bottom:1px solid var(--border);font-weight:600">${c.banco||'—'}</td>
+                  <td style="padding:10px 12px;border-bottom:1px solid var(--border)">${c.agencia||'—'}</td>
+                  <td style="padding:10px 12px;border-bottom:1px solid var(--border)">${c.conta||'—'}</td>
+                  ${isAdmin()||isGestor() ? `<td style="padding:10px 12px;border-bottom:1px solid var(--border);text-align:center;white-space:nowrap">
+                    <button class="btn btn-ghost btn-xs" onclick="abrirFormInstituicao('${c.id}')" title="Editar">✏️</button>
+                    <button class="btn btn-ghost btn-xs" onclick="excluirInstituicao('${c.id}')" title="Excluir" style="color:var(--danger)">🗑️</button>
+                  </td>` : ''}
+                </tr>`).join('')}
+            </tbody>
+          </table>`}
+    </div>`;
+}
+
+function abrirFormInstituicao(id) {
+  const c = id ? (DB.contasBancarias||[]).find(x=>x.id===id) : null;
+  openModal(`<h2>${c ? '✏️ Editar' : '➕ Nova'} Conta Bancária</h2>
+    <div class="form-group">
+      <label>Banco *</label>
+      <input id="inst-banco" type="text" value="${c?.banco||''}" placeholder="Ex: Banco do Brasil, Itaú, Bradesco..." style="width:100%">
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="form-group">
+        <label>Agência *</label>
+        <input id="inst-agencia" type="text" value="${c?.agencia||''}" placeholder="Ex: 1234-5">
+      </div>
+      <div class="form-group">
+        <label>Conta *</label>
+        <input id="inst-conta" type="text" value="${c?.conta||''}" placeholder="Ex: 00012345-6">
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-primary" onclick="_salvarInstituicao('${id||''}')">💾 Salvar</button>
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+    </div>`);
+}
+
+function _salvarInstituicao(id) {
+  const banco   = document.getElementById('inst-banco')?.value.trim();
+  const agencia = document.getElementById('inst-agencia')?.value.trim();
+  const conta   = document.getElementById('inst-conta')?.value.trim();
+  if (!banco || !agencia || !conta) { alert('Preencha todos os campos.'); return; }
+  if (!DB.contasBancarias) DB.contasBancarias = [];
+  if (id) {
+    const c = DB.contasBancarias.find(x=>x.id===id);
+    if (c) { c.banco=banco; c.agencia=agencia; c.conta=conta; }
+  } else {
+    DB.contasBancarias.push({ id: uid(), banco, agencia, conta });
+  }
+  saveDB(); closeModal(); renderInstituicoes();
+}
+
+function excluirInstituicao(id) {
+  if (!confirm('Excluir esta conta bancária?')) return;
+  DB.contasBancarias = (DB.contasBancarias||[]).filter(x=>x.id!==id);
+  saveDB(); renderInstituicoes();
+}
+
+/* ============================================================
    IMPORTAR PLANILHA
 ============================================================ */
 function renderImportar(){
@@ -6736,6 +6848,7 @@ function renderParametros(){
           { key:'crm',           label:'CRM – Tratativas' },
           { key:'vendedores',    label:'Cadastro de Vendedores' },
           { key:'clientes',      label:'Cadastro de Clientes' },
+          { key:'instituicoes',  label:'Instituições Financeiras' },
           { key:'importar',      label:'Importar Planilha' },
           { key:'parametros',    label:'Parâmetros' },
           { key:'templates',     label:'Templates de Mensagem' },
@@ -7162,6 +7275,7 @@ function renderPermissoesUsuarioCard() {
     { key:'crm',           label:'CRM – Tratativas' },
     { key:'vendedores',    label:'Cadastro de Vendedores' },
     { key:'clientes',      label:'Cadastro de Clientes' },
+    { key:'instituicoes',  label:'Instituições Financeiras' },
     { key:'importar',      label:'Importar Planilha' },
     { key:'parametros',    label:'Parâmetros' },
     { key:'templates',     label:'Templates de Mensagem' },
