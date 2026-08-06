@@ -2065,6 +2065,23 @@ function renderDashboard() {
       <div class="kpi" style="cursor:pointer;border-color:#881337;border-width:2px" onclick="abrirKpiModal('processo_judicial')"><div class="label" style="color:#881337">Proc. Judicial</div><div class="value" style="color:#881337">${fmtKpi(valPJ)}</div><div style="font-size:11px;color:#881337;margin-top:2px;opacity:.8">${flagPJ} título(s)</div></div>
     </div>
 
+    <div style="margin-top:28px;margin-bottom:24px;padding:18px 20px;background:#f0fdf4;border:1px solid #86efac;border-radius:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+        <span style="font-size:12px;font-weight:700;color:#15803d;text-transform:uppercase;letter-spacing:.6px">💰 Recebimentos Pagos</span>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          ${['mes','semana','ano','tudo'].map(t => {
+            const lbl = {mes:'Este mês',semana:'Esta semana',ano:'Este ano',tudo:'Tudo'}[t];
+            const ativo = _dashPagosPeriodoAtivo === t;
+            return `<button id="dpb-${t}" onclick="setDashPagosPeriodo('${t}')" style="padding:4px 10px;border-radius:16px;border:1px solid ${ativo?'#16a34a':'#86efac'};font-size:11px;font-weight:600;cursor:pointer;background:${ativo?'#16a34a':'#fff'};color:${ativo?'#fff':'#15803d'};transition:all .15s">${lbl}</button>`;
+          }).join('')}
+          <input type="date" id="dpb-de" value="${_dashPagosDe}" oninput="setDashPagosPeriodo('custom')" style="font-size:11px;padding:3px 7px;border:1px solid #86efac;border-radius:6px;background:#fff;color:#15803d">
+          <span style="font-size:11px;color:#15803d">até</span>
+          <input type="date" id="dpb-ate" value="${_dashPagosAte}" oninput="setDashPagosPeriodo('custom')" style="font-size:11px;padding:3px 7px;border:1px solid #86efac;border-radius:6px;background:#fff;color:#15803d">
+        </div>
+      </div>
+      <div class="kpi-grid" id="kpi-pagos-grid">${_buildKpiPagosHtml()}</div>
+    </div>
+
     <div class="card">
       <div class="card-title">Aging – Dias de Atraso</div>
       <div class="aging-grid">
@@ -2578,16 +2595,93 @@ function filterContasReceber() {
     </div>`;
 }
 
-function pagarContasReceber(id) {
+function abrirModalPagamento(id, origem) {
   const n = DB.notas.find(x=>x.id===id); if(!n) return;
-  if (!confirm(`✅ Confirmar recebimento:\n\nNF ${n.nf} — ${n.cliente}\nValor: ${fmt(n.valor)}\nVencimento: ${fmtDate(n.vencimento)}\n\nO título será baixado como Pago.`)) return;
-  n.statusAntesPagamento = n.baseStatus; // guarda status original para extorno
-  n.origemPagamento = 'contas-receber';
-  n.baseStatus = 'pago';
-  if (!n.dataPagamento) n.dataPagamento = today();
-  addHist(n, 'Pago', 'Baixado como pago via Contas a Receber');
-  logAudit('Pago (Contas a Receber)', `NF ${n.nf} — ${n.cliente} — R$ ${fmt(n.valor)}`);
-  saveDB(); filterContasReceber();
+  const vTit = Number(n.valor||0);
+  openModal(`<h2>✅ Confirmar Recebimento</h2>
+    <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:14px 16px;margin-bottom:16px">
+      <div style="font-size:13px;font-weight:700;color:#14532d;margin-bottom:4px">NF ${n.nf||'—'} — ${n.cliente}</div>
+      <div style="font-size:12px;color:#15803d">Valor do Título: <b>${fmt(vTit)}</b> &nbsp;|&nbsp; Vencimento: ${fmtDate(n.vencimento)}</div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+      <div class="form-group" style="margin:0">
+        <label style="color:#dc2626">Multa (R$)</label>
+        <input id="mp-multa" type="number" step="0.01" min="0" value="0"
+          oninput="_calcTotalReceber(${vTit.toFixed(2)})"
+          style="border:1px solid #fca5a5">
+      </div>
+      <div class="form-group" style="margin:0">
+        <label style="color:#0284c7">Juros (R$)</label>
+        <input id="mp-juros" type="number" step="0.01" min="0" value="0"
+          oninput="_calcTotalReceber(${vTit.toFixed(2)})"
+          style="border:1px solid #93c5fd">
+      </div>
+    </div>
+    <div class="form-group">
+      <label style="color:#d97706">Desconto (R$)</label>
+      <input id="mp-desconto" type="number" step="0.01" min="0" value="0"
+        oninput="_calcTotalReceber(${vTit.toFixed(2)})"
+        style="border:1px solid #fde68a">
+    </div>
+    <div id="mp-total-preview" style="background:#f0fdf4;border:1px solid #86efac;border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#14532d">
+      <b>Total a Receber:</b> <span id="mp-total-val" style="font-size:16px;font-weight:700">${fmt(vTit)}</span>
+    </div>
+    <div class="form-group">
+      <label>Valor Efetivamente Recebido *</label>
+      <input id="mp-valor" type="number" step="0.01" min="0" value="${vTit.toFixed(2)}"
+        style="font-size:16px;font-weight:700;border:2px solid #16a34a">
+    </div>
+    <div class="form-group">
+      <label>Data do Pagamento</label>
+      <input id="mp-data" type="date" value="${today()}">
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-primary" onclick="_confirmarPagamento('${id}','${origem}')">✅ Confirmar Baixa</button>
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+    </div>`);
+}
+
+function _calcTotalReceber(vTit) {
+  const multa    = parseFloat(document.getElementById('mp-multa')?.value)   || 0;
+  const juros    = parseFloat(document.getElementById('mp-juros')?.value)    || 0;
+  const desconto = parseFloat(document.getElementById('mp-desconto')?.value) || 0;
+  const total = vTit + multa + juros - desconto;
+  const el = document.getElementById('mp-total-val');
+  if (el) el.textContent = fmt(total);
+  const inp = document.getElementById('mp-valor');
+  if (inp) inp.value = total > 0 ? total.toFixed(2) : '0.00';
+}
+
+function _confirmarPagamento(id, origem) {
+  const n = DB.notas.find(x=>x.id===id); if(!n) return;
+  const valorPago  = parseFloat(document.getElementById('mp-valor')?.value);
+  if (isNaN(valorPago) || valorPago <= 0) { alert('Informe o valor recebido.'); return; }
+  const multa    = Math.round((parseFloat(document.getElementById('mp-multa')?.value)   || 0) * 100) / 100;
+  const juros    = Math.round((parseFloat(document.getElementById('mp-juros')?.value)    || 0) * 100) / 100;
+  const desconto = Math.round((parseFloat(document.getElementById('mp-desconto')?.value) || 0) * 100) / 100;
+  const dataPag  = document.getElementById('mp-data')?.value || today();
+  n.statusAntesPagamento = n.baseStatus;
+  n.origemPagamento = origem;
+  n.baseStatus    = 'pago';
+  n.dataPagamento = dataPag;
+  n.valorPago     = Math.round(valorPago * 100) / 100;
+  n.multa         = multa;
+  n.juros         = juros;
+  n.desconto      = desconto;
+  const partes = [];
+  if (multa   > 0) partes.push(`multa ${fmt(multa)}`);
+  if (juros   > 0) partes.push(`juros ${fmt(juros)}`);
+  if (desconto> 0) partes.push(`desconto -${fmt(desconto)}`);
+  const extra = partes.length ? ' (' + partes.join(', ') + ')' : '';
+  addHist(n, 'Pago', `Baixado como pago. Valor recebido: ${fmt(n.valorPago)}${extra}`);
+  logAudit('Pago', `NF ${n.nf} — ${n.cliente} — Recebido: ${fmt(n.valorPago)}${extra}`);
+  saveDB(); closeModal();
+  if (origem === 'contas-receber') filterContasReceber();
+  else _reRenderCurrentReceivables();
+}
+
+function pagarContasReceber(id) {
+  abrirModalPagamento(id, 'contas-receber');
 }
 
 function exportContasReceber() {
@@ -2886,6 +2980,10 @@ function excluirSelecionados() {
 ============================================================ */
 let _pagosSort = { campo: 'dataPagamento', dir: 'desc' };
 let _pagosFiltradas = [];
+const _hj0 = new Date().toISOString().substring(0,10);
+let _dashPagosDe = _hj0.substring(0,7) + '-01';
+let _dashPagosAte = _hj0;
+let _dashPagosPeriodoAtivo = 'mes';
 
 function renderPagos() {
   document.getElementById('content').innerHTML = `
@@ -2963,9 +3061,20 @@ function filterPagos() {
     return `<th style="cursor:pointer" onclick="sortPagos('${campo}')">${label}${seta}</th>`;
   };
 
+  const totalValorPago = notas.reduce((s,n) => s + Number(n.valorPago ?? n.valor ?? 0), 0);
+  const totalMulta     = notas.reduce((s,n) => s + Number(n.multa    || 0), 0);
+  const totalJuros     = notas.reduce((s,n) => s + Number(n.juros    || 0), 0);
+  const totalDesconto  = notas.reduce((s,n) => s + Number(n.desconto || 0), 0);
+
   const rows = notas.map(n => {
-    const atrasado = n.dataPagamento && n.vencimento && n.dataPagamento > n.vencimento;
-    const diasAtr  = atrasado ? Math.round((new Date(n.dataPagamento) - new Date(n.vencimento)) / 86400000) : 0;
+    const atrasado   = n.dataPagamento && n.vencimento && n.dataPagamento > n.vencimento;
+    const diasAtr    = atrasado ? Math.round((new Date(n.dataPagamento) - new Date(n.vencimento)) / 86400000) : 0;
+    const valorPago  = n.valorPago ?? n.valor;
+    // Juros e Multa juntos na mesma célula
+    const multaTag   = n.multa  > 0 ? `<span style="font-size:10px;background:#fee2e2;color:#b91c1c;padding:1px 6px;border-radius:8px;font-weight:700;display:inline-block;margin-bottom:2px">Multa +${fmt(n.multa)}</span>` : '';
+    const jurosTag   = n.juros  > 0 ? `<span style="font-size:10px;background:#dbeafe;color:#1d4ed8;padding:1px 6px;border-radius:8px;font-weight:700;display:inline-block">Juros +${fmt(n.juros)}</span>` : '';
+    const jmCel      = (multaTag || jurosTag) ? `<div style="display:flex;flex-direction:column;gap:2px;align-items:flex-end">${multaTag}${jurosTag}</div>` : '—';
+    const descontoCel= n.desconto > 0 ? `<span style="font-size:10px;background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:8px;font-weight:700">-${fmt(n.desconto)}</span>` : '—';
     return `<tr>
       <td><b>${n.nf||'—'}</b></td>
       <td>${n.cliente||'—'}</td>
@@ -2977,6 +3086,9 @@ function filterPagos() {
         ${atrasado ? `<span style="margin-left:6px;font-size:10px;background:#fef2f2;color:#b91c1c;padding:1px 6px;border-radius:8px;font-weight:700">${diasAtr}d atraso</span>` : (n.dataPagamento ? `<span style="margin-left:6px;font-size:10px;background:#dcfce7;color:#15803d;padding:1px 6px;border-radius:8px;font-weight:700">Em dia</span>` : '')}
       </td>
       <td class="text-right"><b>${fmt(n.valor)}</b></td>
+      <td class="text-right" style="color:#15803d;font-weight:700">${fmt(valorPago)}</td>
+      <td class="text-right">${jmCel}</td>
+      <td class="text-right">${descontoCel}</td>
       <td style="white-space:nowrap">
         ${canModify('vencidos')||canModify('contas-receber') ? `<button class="btn btn-ghost btn-xs" onclick="openNotaForm('${n.id}')" title="Ver/Editar">✏️</button>` : ''}
         ${(isAdmin()||canModify('extornarBaixa')) ? `<button class="btn btn-ghost btn-xs" onclick="extornarBaixa('${n.id}')" title="Extornar baixa" style="color:#d97706;font-size:14px">↩</button>` : ''}
@@ -2985,13 +3097,18 @@ function filterPagos() {
   }).join('');
 
   const empty = notas.length === 0
-    ? `<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--text-muted)">Nenhum recebimento pago encontrado</td></tr>`
+    ? `<tr><td colspan="11" style="text-align:center;padding:40px;color:var(--text-muted)">Nenhum recebimento pago encontrado</td></tr>`
     : '';
 
   document.getElementById('pagos-tbl').innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:13px;color:var(--text-muted)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:13px;color:var(--text-muted);flex-wrap:wrap;gap:8px">
       <span>${notas.length} recebimento(s) pago(s)</span>
-      <span style="font-weight:700;color:var(--success)">Total: ${fmt(totalValor)}</span>
+      <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+        <span style="font-weight:700;color:#15803d">Recebido: ${fmt(totalValorPago)}</span>
+        ${totalMulta    > 0 ? `<span style="font-weight:700;color:#b91c1c">Multa: +${fmt(totalMulta)}</span>`      : ''}
+        ${totalJuros    > 0 ? `<span style="font-weight:700;color:#1d4ed8">Juros: +${fmt(totalJuros)}</span>`      : ''}
+        ${totalDesconto > 0 ? `<span style="font-weight:700;color:#92400e">Desconto: -${fmt(totalDesconto)}</span>` : ''}
+      </div>
     </div>
     <table>
       <thead><tr>
@@ -3002,6 +3119,9 @@ function filterPagos() {
         ${mkTh('Vencimento','vencimento')}
         ${mkTh('Data Pagamento','dataPagamento')}
         ${mkTh('Valor','valor')}
+        <th class="text-right">Valor Pago</th>
+        <th class="text-right">Juros e Multa</th>
+        <th class="text-right">Desconto</th>
         <th>Ações</th>
       </tr></thead>
       <tbody>${rows}${empty}</tbody>
@@ -3014,11 +3134,86 @@ function sortPagos(campo) {
   filterPagos();
 }
 
+function _buildKpiPagosHtml() {
+  const notas = (DB.notas||[]).filter(n => {
+    if (calcStatus(n) !== 'pago') return false;
+    if (_empresaFiltro && n.empresa !== _empresaFiltro) return false;
+    if (_dashPagosDe  && (n.dataPagamento||'') < _dashPagosDe)  return false;
+    if (_dashPagosAte && (n.dataPagamento||'') > _dashPagosAte) return false;
+    return true;
+  });
+  const totalRecebido = notas.reduce((s,n) => s + Number(n.valorPago ?? n.valor ?? 0), 0);
+  const totalMulta    = notas.reduce((s,n) => s + Number(n.multa    || 0), 0);
+  const totalJuros    = notas.reduce((s,n) => s + Number(n.juros    || 0), 0);
+  const totalDesconto = notas.reduce((s,n) => s + Number(n.desconto || 0), 0);
+  const qtd = notas.length;
+  return `
+    <div class="kpi success" style="border-color:#16a34a;border-width:2px;cursor:pointer" onclick="navigate('pagos')" title="${fmt(totalRecebido)}">
+      <div class="label" style="color:#15803d">💰 Total Recebido</div>
+      <div class="value" style="color:#15803d">${fmtKpi(totalRecebido)}</div>
+      <div class="sub">${qtd} título(s) pago(s)</div>
+    </div>
+    <div class="kpi" style="border-color:#dc2626;border-width:2px" title="${fmt(totalMulta)}">
+      <div class="label" style="color:#dc2626">⚠️ Multas</div>
+      <div class="value" style="color:#dc2626">${fmtKpi(totalMulta)}</div>
+      <div class="sub">${totalMulta > 0 ? fmt(totalMulta) : 'Nenhuma multa'}</div>
+    </div>
+    <div class="kpi" style="border-color:#0284c7;border-width:2px" title="${fmt(totalJuros)}">
+      <div class="label" style="color:#0284c7">📈 Juros</div>
+      <div class="value" style="color:#0284c7">${fmtKpi(totalJuros)}</div>
+      <div class="sub">${totalJuros > 0 ? fmt(totalJuros) : 'Nenhum juros'}</div>
+    </div>
+    <div class="kpi" style="border-color:#d97706;border-width:2px" title="${fmt(totalDesconto)}">
+      <div class="label" style="color:#d97706">🏷️ Descontos</div>
+      <div class="value" style="color:#d97706">${fmtKpi(totalDesconto)}</div>
+      <div class="sub">${totalDesconto > 0 ? fmt(totalDesconto) : 'Nenhum desconto'}</div>
+    </div>`;
+}
+
+function setDashPagosPeriodo(tipo) {
+  _dashPagosPeriodoAtivo = tipo;
+  const hj = today();
+  if (tipo === 'mes') {
+    _dashPagosDe  = hj.substring(0,7) + '-01';
+    _dashPagosAte = hj;
+  } else if (tipo === 'semana') {
+    const d = new Date(); d.setDate(d.getDate() - d.getDay());
+    _dashPagosDe  = d.toISOString().substring(0,10);
+    _dashPagosAte = hj;
+  } else if (tipo === 'ano') {
+    _dashPagosDe  = hj.substring(0,4) + '-01-01';
+    _dashPagosAte = hj;
+  } else if (tipo === 'tudo') {
+    _dashPagosDe  = '';
+    _dashPagosAte = '';
+  } else { // custom
+    _dashPagosDe  = document.getElementById('dpb-de')?.value  || '';
+    _dashPagosAte = document.getElementById('dpb-ate')?.value || '';
+  }
+  if (tipo !== 'custom') {
+    const de = document.getElementById('dpb-de');  if (de)  de.value  = _dashPagosDe;
+    const ate = document.getElementById('dpb-ate'); if (ate) ate.value = _dashPagosAte;
+  }
+  // Atualiza botões de atalho
+  ['mes','semana','ano','tudo'].forEach(t => {
+    const btn = document.getElementById('dpb-'+t);
+    if (!btn) return;
+    const ativo = _dashPagosPeriodoAtivo === t;
+    btn.style.background = ativo ? '#16a34a' : '#fff';
+    btn.style.color      = ativo ? '#fff'    : '#15803d';
+    btn.style.border     = `1px solid ${ativo ? '#16a34a' : '#86efac'}`;
+  });
+  const el = document.getElementById('kpi-pagos-grid');
+  if (el) el.innerHTML = _buildKpiPagosHtml();
+}
+
 function exportPagos() {
-  const rows = [['NF','Cliente','Empresa','Vendedor','Vencimento','Data Pagamento','Valor']];
+  const rows = [['NF','Cliente','Empresa','Vendedor','Vencimento','Data Pagamento','Valor Título','Valor Pago','Multa','Juros','Desconto']];
   _pagosFiltradas.forEach(n => rows.push([
     n.nf||'', n.cliente||'', n.empresa||'', n.vendedor||'',
-    n.vencimento||'', n.dataPagamento||'', Number(n.valor||0)
+    n.vencimento||'', n.dataPagamento||'',
+    Number(n.valor||0), Number(n.valorPago ?? n.valor ?? 0),
+    Number(n.multa||0), Number(n.juros||0), Number(n.desconto||0)
   ]));
   const csv = rows.map(r=>r.map(c=>typeof c==='string'?`"${c.replace(/"/g,'""')}"`:c).join(';')).join('\r\n');
   const blob = new Blob(['﻿'+csv], {type:'text/csv;charset=utf-8'});
@@ -3048,6 +3243,10 @@ function extornarBaixa(id) {
   n.dataPagamento = null;
   delete n.statusAntesPagamento;
   delete n.origemPagamento;
+  delete n.valorPago;
+  delete n.multa;
+  delete n.juros;
+  delete n.desconto;
   saveDB();
   navigate(paginaDestino);
   setTimeout(() => alert(`✅ Extornado!\nRetornou para "${destinoLabel}".`), 200);
@@ -4175,13 +4374,10 @@ function flagJuridico(id) {
 
 function setBase(id, status) {
   const n = DB.notas.find(x=>x.id===id); if(!n) return;
-  const lbl = {pago:'Pago',perdido:'Perdido',aguardar:'Aguardar',processo_judicial:'Processo Judicial'}[status]||status;
+  // Pago: abre modal de confirmação com valor real
+  if (status === 'pago') { abrirModalPagamento(id, 'vencidos'); return; }
+  const lbl = {perdido:'Perdido',aguardar:'Aguardar',processo_judicial:'Processo Judicial'}[status]||status;
   if (!confirm(`Confirmar: marcar como "${lbl}"?`)) return;
-  if (status === 'pago') {
-    n.statusAntesPagamento = n.baseStatus; // guarda status original para extorno
-    n.origemPagamento = 'vencidos';
-    if (!n.dataPagamento) n.dataPagamento = today();
-  }
   n.baseStatus = status;
   addHist(n, lbl, `Status alterado manualmente para ${lbl}`);
   logAudit('Status: '+lbl, `NF ${n.nf} — ${n.cliente} — R$ ${fmt(n.valor)}`);
